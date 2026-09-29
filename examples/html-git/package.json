@@ -1,0 +1,12 @@
+{
+  "name": "html-git",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Git (init, add, commit, branch, merge, push) in a single dependency-free HTML file.",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

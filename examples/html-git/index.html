@@ -1,0 +1,1922 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>html-git</title>
+<style>
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --border: #d9dde3;
+  --text: #1c2330;
+  --muted: #5d6778;
+  --accent: #d2491f;
+  --accent-text: #ffffff;
+  --ok: #1d7a46;
+  --warn: #9a6400;
+  --err: #b42318;
+  --add: #1d7a46;
+  --mod: #9a6400;
+  --del: #b42318;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b;
+    --panel: #1a1f27;
+    --panel-2: #222833;
+    --border: #313947;
+    --text: #e4e8ee;
+    --muted: #97a1b2;
+    --accent: #f06a3f;
+    --accent-text: #16110f;
+    --ok: #4cc584;
+    --warn: #e3b341;
+    --err: #ff7b72;
+    --add: #4cc584;
+    --mod: #e3b341;
+    --del: #ff7b72;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+header.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.brand { font-weight: 700; font-size: 17px; letter-spacing: -0.01em; }
+.brand span { color: var(--accent); }
+.tagline { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+.folder { font-family: var(--mono); font-size: 13px; color: var(--muted); max-width: 100%; overflow-wrap: anywhere; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.small { padding: 2px 8px; font-size: 12px; }
+input[type=text], input[type=email], input[type=password], input[type=url], select, textarea {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0;
+}
+textarea { min-height: 80px; resize: vertical; font-family: var(--mono); font-size: 13px; }
+label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+label.field > span { font-weight: 600; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; }
+.banner { margin: 12px 16px 0; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--err); color: var(--err); background: var(--panel); }
+.banner strong { display: block; margin-bottom: 2px; }
+.notice { padding: 8px 12px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.notice.warn { border-color: var(--warn); color: var(--warn); }
+.notice.err { border-color: var(--err); color: var(--err); }
+main.layout { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 16px; padding: 16px; align-items: start; }
+@media (max-width: 800px) { main.layout { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; min-width: 0; }
+.card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.card h3 { margin: 14px 0 6px; font-size: 13px; }
+aside { display: grid; gap: 16px; min-width: 0; }
+dl.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 13px; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.pill { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+ol.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ol.log li { display: grid; gap: 1px; font-size: 13px; min-width: 0; }
+ol.log .msg { overflow-wrap: anywhere; }
+ol.log .meta { color: var(--muted); font-size: 12px; }
+nav.tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: -14px -14px 14px; padding: 8px 8px 0; }
+nav.tabs button { border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; background: none; padding: 7px 14px; margin-bottom: -1px; }
+nav.tabs button[aria-selected=true] { background: var(--panel); border-color: var(--border); font-weight: 600; color: var(--accent); }
+nav.tabs button .cmd { font-family: var(--mono); font-size: 12px; }
+.panel[hidden] { display: none; }
+.panel { display: grid; gap: 12px; min-width: 0; }
+.panel > p { margin: 0; color: var(--muted); }
+table.files { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+table.files th, table.files td { padding: 5px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+table.files th { color: var(--muted); font-weight: 600; font-size: 12px; }
+table.files td.path { font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+table.files col.c1 { width: 34px; } table.files col.c2 { width: 46px; } table.files col.c4 { width: 38%; }
+.xy { font-family: var(--mono); font-weight: 700; white-space: pre; }
+.st-add { color: var(--add); } .st-mod { color: var(--mod); } .st-del { color: var(--del); } .st-unt { color: var(--muted); } .st-conf { color: var(--err); }
+ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+ul.plain li { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+ul.plain li .name { font-family: var(--mono); overflow-wrap: anywhere; min-width: 0; }
+#console { margin: 0 16px 16px; }
+#console pre { margin: 0; max-height: 260px; overflow: auto; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#console .l-err { color: var(--err); } #console .l-ok { color: var(--ok); } #console .l-cmd { color: var(--accent); font-weight: 600; }
+.empty { color: var(--muted); font-style: italic; }
+.welcome { max-width: 760px; margin: 32px auto; padding: 0 16px; display: grid; gap: 14px; }
+.welcome h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+.welcome p { margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">html<span>-git</span></div>
+  <div class="tagline">git init · add · commit · branch · merge · push — in one HTML file, no libraries</div>
+  <div class="spacer"></div>
+  <span class="folder" id="folderName"></span>
+  <button class="primary" id="openBtn">Open folder…</button>
+</header>
+<div class="banner" id="unsupported" hidden>
+  <strong>This browser cannot open local folders.</strong>
+  html-git needs the File System Access API directory picker (<code>window.showDirectoryPicker</code>), which is only available in
+  desktop Chromium browsers: Google Chrome, Microsoft Edge, Opera, Brave, Vivaldi (version 86 or newer). Firefox and Safari do not support it.
+</div>
+
+<section class="welcome" id="welcome">
+  <h1>Git, in a single HTML file.</h1>
+  <p>Pick a folder on your disk. html-git reads and writes its real <code>.git</code> directory, so everything it does can be
+    inspected, continued or undone with ordinary command-line git.</p>
+  <p>Supported: <b>init</b>, <b>add</b>, <b>commit -m</b>, <b>branch</b> (create / list / switch), <b>merge</b> (fast-forward and three-way),
+    <b>push</b> (smart HTTP). Works from <code>file://</code> in desktop Chrome, Edge and other Chromium browsers.</p>
+  <div class="row"><button class="primary" id="openBtn2">Open folder…</button></div>
+</section>
+
+<main class="layout" id="app" hidden>
+  <aside>
+    <div class="card">
+      <h2>Repository</h2>
+      <dl class="kv" id="repoInfo"></dl>
+    </div>
+    <div class="card">
+      <h2>History</h2>
+      <ol class="log" id="history"></ol>
+    </div>
+  </aside>
+  <div class="card">
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-tab="init"><span class="cmd">init</span></button>
+      <button role="tab" data-tab="add"><span class="cmd">add</span></button>
+      <button role="tab" data-tab="commit"><span class="cmd">commit</span></button>
+      <button role="tab" data-tab="branch"><span class="cmd">branch</span></button>
+      <button role="tab" data-tab="merge"><span class="cmd">merge</span></button>
+      <button role="tab" data-tab="push"><span class="cmd">push</span></button>
+    </nav>
+
+    <section class="panel" data-panel="init" hidden>
+      <p>Create an empty git repository in the selected folder (<code>git init</code>).</p>
+      <div id="initState"></div>
+      <label class="field"><span>Initial branch name</span><input type="text" id="initBranch" value="main"></label>
+      <div class="row"><button class="primary" id="initBtn">git init</button></div>
+    </section>
+
+    <section class="panel" data-panel="add" hidden>
+      <p>Select files to stage (<code>git add</code>). Deleted files are staged as removals.</p>
+      <div class="row">
+        <button id="selAll" class="small">Select all</button>
+        <button id="selNone" class="small">Select none</button>
+        <label class="row" style="gap:4px"><input type="checkbox" id="showAll"> show unchanged tracked files</label>
+        <div class="spacer"></div>
+        <button id="refreshBtn" class="small">Refresh</button>
+      </div>
+      <table class="files">
+        <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
+        <thead><tr><th></th><th>XY</th><th>Path</th><th>State</th></tr></thead>
+        <tbody id="fileRows"></tbody>
+      </table>
+      <div class="row"><button class="primary" id="addBtn">git add selected</button></div>
+    </section>
+
+    <section class="panel" data-panel="commit" hidden>
+      <p>Record the staged changes as a new commit (<code>git commit -m</code>).</p>
+      <div id="mergeNotice"></div>
+      <h3>Staged changes</h3>
+      <ul class="plain" id="stagedList"></ul>
+      <div class="grid2">
+        <label class="field"><span>Author name</span><input type="text" id="authorName" autocomplete="name"></label>
+        <label class="field"><span>Author email</span><input type="email" id="authorEmail" autocomplete="email"></label>
+      </div>
+      <label class="field"><span>Commit message (-m)</span><textarea id="commitMsg" placeholder="Describe your change"></textarea></label>
+      <div class="row"><button class="primary" id="commitBtn">git commit</button></div>
+    </section>
+
+    <section class="panel" data-panel="branch" hidden>
+      <p>List, create and switch branches (<code>git branch</code>, <code>git switch</code>). Switching requires a clean working tree.</p>
+      <ul class="plain" id="branchList"></ul>
+      <h3>Create branch</h3>
+      <div class="row">
+        <input type="text" id="newBranch" placeholder="feature/my-idea" style="flex:1; min-width:160px">
+        <label class="row" style="gap:4px"><input type="checkbox" id="switchNew" checked> switch to it</label>
+        <button class="primary" id="createBranchBtn">git branch</button>
+      </div>
+    </section>
+
+    <section class="panel" data-panel="merge" hidden>
+      <p>Merge another branch into the current one (<code>git merge</code>). Fast-forwards when possible, otherwise creates a merge commit.
+        Conflicts stop the merge: fix the files, stage them with <b>add</b>, then <b>commit</b>.</p>
+      <div id="mergeState"></div>
+      <div class="row">
+        <select id="mergeFrom" style="flex:1; min-width:160px"></select>
+        <button class="primary" id="mergeBtn">git merge</button>
+        <button id="abortBtn" hidden>git merge --abort</button>
+      </div>
+      <p class="notice">The merge commit uses the author name and email from the <b>commit</b> tab.</p>
+    </section>
+
+    <section class="panel" data-panel="push" hidden>
+      <p>Upload a branch to an HTTPS remote with the git smart HTTP protocol (<code>git push</code>). Only fast-forward pushes are allowed.</p>
+      <div class="grid2">
+        <label class="field"><span>Remote URL (origin)</span><input type="url" id="remoteUrl" placeholder="https://github.com/you/repo.git"></label>
+        <label class="field"><span>Branch</span><select id="pushBranch"></select></label>
+        <label class="field"><span>Username (optional)</span><input type="text" id="pushUser" placeholder="x-access-token" autocomplete="username"></label>
+        <label class="field"><span>Token / password</span><input type="password" id="pushToken" autocomplete="current-password"></label>
+      </div>
+      <label class="field"><span>CORS proxy (optional)</span><input type="url" id="corsProxy" placeholder="https://cors.isomorphic-git.org"></label>
+      <p class="notice">Browsers only let a page talk to servers that send CORS headers. GitHub, GitLab and most hosts do <b>not</b>,
+        so pushing to them from a web page needs a CORS proxy; the request becomes <code>&lt;proxy&gt;/&lt;remote URL without https://&gt;</code>.
+        A proxy sees your token, so only use one you trust or run your own. Self-hosted servers that allow CORS work directly.</p>
+      <div class="row"><button class="primary" id="pushBtn">git push</button></div>
+    </section>
+  </div>
+</main>
+
+<section class="card" id="console" hidden>
+  <h2>Output</h2>
+  <pre id="out"></pre>
+</section>
+
+<script id="git-core">
+/* html-git core: a dependency-free implementation of the git object model,
+ * index, refs, merging and the smart HTTP push protocol. It touches storage only
+ * through a small async filesystem interface so it runs unchanged in the browser
+ * (File System Access API) and in Node (tests). */
+const GitCore = (() => {
+  'use strict';
+  const te = new TextEncoder();
+  const td = new TextDecoder();
+  const tdStrict = new TextDecoder('utf-8', { fatal: true });
+  const enc = (s) => te.encode(s);
+  const dec = (b) => td.decode(b);
+  const ZERO_SHA = '0'.repeat(40);
+
+  // ---------- bytes ----------
+  function concatBytes(chunks) {
+    let n = 0;
+    for (const c of chunks) n += c.length;
+    const out = new Uint8Array(n);
+    let o = 0;
+    for (const c of chunks) { out.set(c, o); o += c.length; }
+    return out;
+  }
+  const HEX = [];
+  for (let i = 0; i < 256; i++) HEX.push(i.toString(16).padStart(2, '0'));
+  function toHex(b) { let s = ''; for (let i = 0; i < b.length; i++) s += HEX[b[i]]; return s; }
+  function fromHex(s) {
+    const out = new Uint8Array(s.length >> 1);
+    for (let i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+    return out;
+  }
+  function compareBytes(a, b) {
+    const n = Math.min(a.length, b.length);
+    for (let i = 0; i < n; i++) if (a[i] !== b[i]) return a[i] - b[i];
+    return a.length - b.length;
+  }
+  const comparePaths = (a, b) => compareBytes(enc(a), enc(b));
+  const isSha = (s) => typeof s === 'string' && /^[0-9a-f]{40}$/.test(s);
+
+  // ---------- SHA-1 ----------
+  function sha1(data) {
+    const len = data.length;
+    const total = Math.ceil((len + 9) / 64) * 64;
+    const buf = new Uint8Array(total);
+    buf.set(data);
+    buf[len] = 0x80;
+    const dv = new DataView(buf.buffer);
+    const bits = len * 8;
+    dv.setUint32(total - 8, Math.floor(bits / 0x100000000));
+    dv.setUint32(total - 4, bits >>> 0);
+    let h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476, h4 = 0xc3d2e1f0;
+    const w = new Int32Array(80);
+    for (let off = 0; off < total; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getInt32(off + i * 4);
+      for (let i = 16; i < 80; i++) { const x = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]; w[i] = (x << 1) | (x >>> 31); }
+      let a = h0, b = h1, c = h2, d = h3, e = h4;
+      for (let i = 0; i < 80; i++) {
+        let f, k;
+        if (i < 20) { f = (b & c) | (~b & d); k = 0x5a827999; }
+        else if (i < 40) { f = b ^ c ^ d; k = 0x6ed9eba1; }
+        else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8f1bbcdc; }
+        else { f = b ^ c ^ d; k = 0xca62c1d6; }
+        const t = (((a << 5) | (a >>> 27)) + f + e + k + w[i]) | 0;
+        e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = t;
+      }
+      h0 = (h0 + a) | 0; h1 = (h1 + b) | 0; h2 = (h2 + c) | 0; h3 = (h3 + d) | 0; h4 = (h4 + e) | 0;
+    }
+    const out = new Uint8Array(20);
+    const ov = new DataView(out.buffer);
+    ov.setInt32(0, h0); ov.setInt32(4, h1); ov.setInt32(8, h2); ov.setInt32(12, h3); ov.setInt32(16, h4);
+    return out;
+  }
+  const sha1Hex = (data) => toHex(sha1(data));
+
+  // ---------- zlib (RFC 1950 / 1951) ----------
+  function adler32(d) {
+    let a = 1, b = 0, i = 0;
+    const n = d.length;
+    while (i < n) {
+      const end = Math.min(i + 3800, n);
+      for (; i < end; i++) { a += d[i]; b += a; }
+      a %= 65521; b %= 65521;
+    }
+    return ((b << 16) | a) >>> 0;
+  }
+  const LBASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+  const LEXT = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+  const DBASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577];
+  const DEXT = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+  const CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+  function buildHuffman(lengths, n) {
+    const count = new Uint16Array(16);
+    const symbol = new Uint16Array(n);
+    for (let s = 0; s < n; s++) count[lengths[s]]++;
+    const offs = new Uint16Array(16);
+    for (let l = 1; l < 15; l++) offs[l + 1] = offs[l] + count[l];
+    for (let s = 0; s < n; s++) if (lengths[s]) symbol[offs[lengths[s]]++] = s;
+    return { count, symbol };
+  }
+  let fixedLit = null, fixedDist = null;
+  function fixedTables() {
+    if (fixedLit) return;
+    const l = new Uint8Array(288);
+    for (let i = 0; i < 288; i++) l[i] = i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8;
+    fixedLit = buildHuffman(l, 288);
+    fixedDist = buildHuffman(new Uint8Array(30).fill(5), 30);
+  }
+
+  // Inflates the zlib stream starting at `start`; returns the data and the offset just past the stream.
+  function inflate(data, start = 0, sizeHint = 0) {
+    let pos = start, bitbuf = 0, bitcnt = 0;
+    const cmf = data[pos], flg = data[pos + 1];
+    if ((cmf & 15) !== 8 || ((cmf << 8) | flg) % 31 !== 0) throw new Error('invalid zlib header');
+    if (flg & 0x20) throw new Error('zlib preset dictionaries are not supported');
+    pos += 2;
+    let out = new Uint8Array(Math.max(256, sizeHint));
+    let olen = 0;
+    const ensure = (n) => {
+      if (olen + n <= out.length) return;
+      let sz = out.length * 2;
+      while (sz < olen + n) sz *= 2;
+      const o = new Uint8Array(sz);
+      o.set(out.subarray(0, olen));
+      out = o;
+    };
+    const bits = (n) => {
+      while (bitcnt < n) {
+        if (pos >= data.length) throw new Error('unexpected end of zlib data');
+        bitbuf |= data[pos++] << bitcnt;
+        bitcnt += 8;
+      }
+      const v = bitbuf & ((1 << n) - 1);
+      bitbuf >>>= n;
+      bitcnt -= n;
+      return v;
+    };
+    const decode = (h) => {
+      let code = 0, first = 0, index = 0;
+      for (let len = 1; len < 16; len++) {
+        code |= bits(1);
+        const count = h.count[len];
+        if (code - count < first) return h.symbol[index + (code - first)];
+        index += count; first += count; first <<= 1; code <<= 1;
+      }
+      throw new Error('invalid huffman code');
+    };
+    let last;
+    do {
+      last = bits(1);
+      const type = bits(2);
+      if (type === 0) {
+        bitbuf = 0; bitcnt = 0;
+        if (pos + 4 > data.length) throw new Error('unexpected end of zlib data');
+        const len = data[pos] | (data[pos + 1] << 8);
+        const nlen = data[pos + 2] | (data[pos + 3] << 8);
+        if (len !== (~nlen & 0xffff)) throw new Error('invalid stored block');
+        pos += 4;
+        if (pos + len > data.length) throw new Error('unexpected end of zlib data');
+        ensure(len);
+        out.set(data.subarray(pos, pos + len), olen);
+        olen += len; pos += len;
+      } else if (type === 1 || type === 2) {
+        let lit, dist;
+        if (type === 1) { fixedTables(); lit = fixedLit; dist = fixedDist; }
+        else {
+          const nlen = bits(5) + 257, ndist = bits(5) + 1, ncode = bits(4) + 4;
+          const cl = new Uint8Array(19);
+          for (let i = 0; i < ncode; i++) cl[CL_ORDER[i]] = bits(3);
+          const clh = buildHuffman(cl, 19);
+          const ll = new Uint8Array(nlen + ndist);
+          let i = 0;
+          while (i < nlen + ndist) {
+            const sym = decode(clh);
+            if (sym < 16) { ll[i++] = sym; continue; }
+            let val = 0, rep;
+            if (sym === 16) { if (i === 0) throw new Error('invalid code lengths'); val = ll[i - 1]; rep = 3 + bits(2); }
+            else if (sym === 17) rep = 3 + bits(3);
+            else rep = 11 + bits(7);
+            if (i + rep > nlen + ndist) throw new Error('invalid code lengths');
+            while (rep--) ll[i++] = val;
+          }
+          lit = buildHuffman(ll.subarray(0, nlen), nlen);
+          dist = buildHuffman(ll.subarray(nlen), ndist);
+        }
+        for (;;) {
+          const sym = decode(lit);
+          if (sym < 256) { ensure(1); out[olen++] = sym; }
+          else if (sym === 256) break;
+          else {
+            const s = sym - 257;
+            if (s >= 29) throw new Error('invalid length code');
+            const len = LBASE[s] + bits(LEXT[s]);
+            const ds = decode(dist);
+            if (ds >= 30) throw new Error('invalid distance code');
+            const d = DBASE[ds] + bits(DEXT[ds]);
+            if (d > olen) throw new Error('invalid distance');
+            ensure(len);
+            for (let k = 0; k < len; k++) { out[olen] = out[olen - d]; olen++; }
+          }
+        }
+      } else throw new Error('invalid deflate block type');
+    } while (!last);
+    if (pos + 4 > data.length) throw new Error('missing zlib checksum');
+    const result = out.slice(0, olen);
+    const want = ((data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3]) >>> 0;
+    if (want !== adler32(result)) throw new Error('zlib checksum mismatch');
+    return { data: result, end: pos + 4 };
+  }
+
+  // Deflate with LZ77 matching and the fixed Huffman code (any valid zlib stream is fine for git).
+  const FIX_CODE = new Uint16Array(288), FIX_LEN = new Uint8Array(288);
+  const LEN_SYM = new Uint8Array(259), DIST_REV = new Uint8Array(30);
+  (() => {
+    const rev = (code, len) => { let r = 0; for (let i = 0; i < len; i++) { r = (r << 1) | (code & 1); code >>= 1; } return r; };
+    for (let s = 0; s < 288; s++) {
+      let code, len;
+      if (s < 144) { code = 0x30 + s; len = 8; }
+      else if (s < 256) { code = 0x190 + s - 144; len = 9; }
+      else if (s < 280) { code = s - 256; len = 7; }
+      else { code = 0xc0 + s - 280; len = 8; }
+      FIX_CODE[s] = rev(code, len); FIX_LEN[s] = len;
+    }
+    for (let l = 3; l <= 258; l++) { let s = 28; while (LBASE[s] > l) s--; LEN_SYM[l] = s; }
+    for (let d = 0; d < 30; d++) DIST_REV[d] = rev(d, 5);
+  })();
+  function deflate(data) {
+    const n = data.length;
+    const buf = new Uint8Array(n + (n >> 3) + 64);
+    let olen = 0, bitbuf = 0, bitcnt = 0;
+    const put = (v, nb) => {
+      bitbuf |= v << bitcnt; bitcnt += nb;
+      while (bitcnt >= 8) { buf[olen++] = bitbuf & 255; bitbuf >>>= 8; bitcnt -= 8; }
+    };
+    const sym = (s) => put(FIX_CODE[s], FIX_LEN[s]);
+    buf[olen++] = 0x78; buf[olen++] = 0x01;
+    put(1, 1); put(1, 2);
+    const head = new Int32Array(1 << 15).fill(-1);
+    const prev = new Int32Array(1 << 15).fill(-1);
+    const hash = (i) => ((data[i] << 10) ^ (data[i + 1] << 5) ^ data[i + 2]) & 0x7fff;
+    const insert = (i) => { const h = hash(i); prev[i & 0x7fff] = head[h]; head[h] = i; };
+    let i = 0;
+    while (i < n) {
+      let best = 0, bestDist = 0;
+      if (i + 2 < n) {
+        const maxLen = Math.min(258, n - i);
+        let j = head[hash(i)], chain = 0;
+        while (j >= 0 && i - j <= 32768 && chain++ < 64) {
+          if (data[j + best] === data[i + best]) {
+            let l = 0;
+            while (l < maxLen && data[j + l] === data[i + l]) l++;
+            if (l > best) { best = l; bestDist = i - j; if (l === maxLen) break; }
+          }
+          const nj = prev[j & 0x7fff];
+          if (nj >= j) break;
+          j = nj;
+        }
+        insert(i);
+      }
+      if (best >= 3) {
+        const s = LEN_SYM[best];
+        sym(257 + s); put(best - LBASE[s], LEXT[s]);
+        let d = 29;
+        while (DBASE[d] > bestDist) d--;
+        put(DIST_REV[d], 5); put(bestDist - DBASE[d], DEXT[d]);
+        for (let k = 1; k < best; k++) if (i + k + 2 < n) insert(i + k);
+        i += best;
+      } else { sym(data[i]); i++; }
+    }
+    sym(256);
+    if (bitcnt > 0) buf[olen++] = bitbuf & 255;
+    const a = adler32(data);
+    buf[olen++] = a >>> 24; buf[olen++] = (a >>> 16) & 255; buf[olen++] = (a >>> 8) & 255; buf[olen++] = a & 255;
+    return buf.slice(0, olen);
+  }
+
+  // ---------- objects ----------
+  const PACK_TYPES = [null, 'commit', 'tree', 'blob', 'tag'];
+  const frameObject = (type, body) => concatBytes([enc(`${type} ${body.length}\0`), body]);
+  const hashObject = (type, body) => sha1Hex(frameObject(type, body));
+  function parseLooseObject(raw) {
+    const sp = raw.indexOf(0x20), nul = raw.indexOf(0);
+    if (sp < 0 || nul < sp) throw new Error('corrupt loose object');
+    const type = dec(raw.subarray(0, sp));
+    const size = Number(dec(raw.subarray(sp + 1, nul)));
+    const body = raw.subarray(nul + 1);
+    if (body.length !== size) throw new Error('corrupt loose object (size mismatch)');
+    return { type, body };
+  }
+
+  const MODE = { FILE: 0o100644, EXEC: 0o100755, LINK: 0o120000, GITLINK: 0o160000, TREE: 0o40000 };
+  const modeString = (m) => m.toString(8);
+  function parseTree(body) {
+    const entries = [];
+    let p = 0;
+    while (p < body.length) {
+      const sp = body.indexOf(0x20, p);
+      const nul = body.indexOf(0, sp);
+      if (sp < 0 || nul < 0 || nul + 21 > body.length) throw new Error('corrupt tree object');
+      entries.push({ mode: parseInt(dec(body.subarray(p, sp)), 8), name: dec(body.subarray(sp + 1, nul)), sha: toHex(body.subarray(nul + 1, nul + 21)) });
+      p = nul + 21;
+    }
+    return entries;
+  }
+  function serializeTree(entries) {
+    const keyed = entries.map((e) => ({ e, key: enc(e.name + (e.mode === MODE.TREE ? '/' : '')) }));
+    keyed.sort((a, b) => compareBytes(a.key, b.key));
+    const parts = [];
+    for (const { e } of keyed) { parts.push(enc(`${modeString(e.mode)} ${e.name}\0`)); parts.push(fromHex(e.sha)); }
+    return concatBytes(parts);
+  }
+  function parseIdent(s) {
+    const m = /^(.*) <(.*)> (\d+) ([+-]\d{4})$/.exec(s || '');
+    return m ? { name: m[1], email: m[2], time: Number(m[3]), tz: m[4] } : { name: s || '', email: '', time: 0, tz: '+0000' };
+  }
+  function parseCommit(body) {
+    const text = dec(body);
+    const idx = text.indexOf('\n\n');
+    const header = idx < 0 ? text : text.slice(0, idx);
+    const c = { tree: null, parents: [], author: null, committer: null, message: idx < 0 ? '' : text.slice(idx + 2) };
+    for (const line of header.split('\n')) {
+      if (line.startsWith('tree ')) c.tree = line.slice(5);
+      else if (line.startsWith('parent ')) c.parents.push(line.slice(7));
+      else if (line.startsWith('author ')) c.author = parseIdent(line.slice(7));
+      else if (line.startsWith('committer ')) c.committer = parseIdent(line.slice(10));
+    }
+    return c;
+  }
+  function formatTz(date) {
+    const off = -date.getTimezoneOffset();
+    const a = Math.abs(off);
+    return (off >= 0 ? '+' : '-') + String(Math.floor(a / 60)).padStart(2, '0') + String(a % 60).padStart(2, '0');
+  }
+  function cleanIdentPart(s) { return String(s || '').replace(/[<>\n\r\0]/g, '').trim(); }
+  function makeIdent(ident, date = new Date()) {
+    const name = cleanIdentPart(ident && ident.name);
+    const email = cleanIdentPart(ident && ident.email);
+    if (!name || !email) throw new Error('Author name and email are required (set them in the commit tab).');
+    return `${name} <${email}> ${Math.floor(date.getTime() / 1000)} ${formatTz(date)}`;
+  }
+  function cleanMessage(msg) {
+    const lines = String(msg || '').replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/\s+$/, ''));
+    while (lines.length && !lines[0]) lines.shift();
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+    const out = [];
+    for (const l of lines) if (l || (out.length && out[out.length - 1])) out.push(l);
+    return out.length ? out.join('\n') + '\n' : '';
+  }
+
+  function applyDelta(base, delta) {
+    let p = 0;
+    const varint = () => { let r = 0, s = 0, c; do { c = delta[p++]; r += (c & 0x7f) * 2 ** s; s += 7; } while (c & 0x80); return r; };
+    if (varint() !== base.length) throw new Error('delta base size mismatch');
+    const out = new Uint8Array(varint());
+    let o = 0;
+    while (p < delta.length) {
+      const op = delta[p++];
+      if (op & 0x80) {
+        let off = 0, size = 0;
+        if (op & 1) off |= delta[p++];
+        if (op & 2) off |= delta[p++] << 8;
+        if (op & 4) off |= delta[p++] << 16;
+        if (op & 8) off += delta[p++] * 0x1000000;
+        if (op & 0x10) size |= delta[p++];
+        if (op & 0x20) size |= delta[p++] << 8;
+        if (op & 0x40) size |= delta[p++] << 16;
+        if (size === 0) size = 0x10000;
+        out.set(base.subarray(off, off + size), o); o += size;
+      } else if (op) {
+        out.set(delta.subarray(p, p + op), o); o += op; p += op;
+      } else throw new Error('invalid delta opcode');
+    }
+    if (o !== out.length) throw new Error('delta result size mismatch');
+    return out;
+  }
+  function parsePackIndex(buf) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const v2 = dv.getUint32(0) === 0xff744f63;
+    if (v2 && dv.getUint32(4) !== 2) throw new Error('unsupported pack index version');
+    const fan = v2 ? 8 : 0;
+    const n = dv.getUint32(fan + 255 * 4);
+    const shaAt = v2 ? (i) => fan + 1024 + i * 20 : (i) => fan + 1024 + i * 24 + 4;
+    const offAt = (i) => {
+      if (!v2) return dv.getUint32(fan + 1024 + i * 24);
+      const base = fan + 1024 + n * 24;
+      const o = dv.getUint32(base + i * 4);
+      if (!(o & 0x80000000)) return o;
+      const lp = base + n * 4 + (o & 0x7fffffff) * 8;
+      return dv.getUint32(lp) * 0x100000000 + dv.getUint32(lp + 4);
+    };
+    return {
+      find(sha) {
+        const want = fromHex(sha);
+        let lo = want[0] ? dv.getUint32(fan + (want[0] - 1) * 4) : 0;
+        let hi = dv.getUint32(fan + want[0] * 4);
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          const c = compareBytes(buf.subarray(shaAt(mid), shaAt(mid) + 20), want);
+          if (c === 0) return offAt(mid);
+          if (c < 0) lo = mid + 1; else hi = mid;
+        }
+        return -1;
+      },
+    };
+  }
+
+  // ---------- index (.git/index, versions 2 and 3; written as version 2) ----------
+  function parseIndex(buf) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    if (dec(buf.subarray(0, 4)) !== 'DIRC') throw new Error('not a git index file');
+    const version = dv.getUint32(4);
+    if (version !== 2 && version !== 3) throw new Error(`git index version ${version} is not supported (use: git update-index --index-version 2)`);
+    const n = dv.getUint32(8);
+    const entries = [];
+    let p = 12;
+    for (let i = 0; i < n; i++) {
+      const start = p;
+      const e = {
+        ctimeS: dv.getUint32(p), ctimeN: dv.getUint32(p + 4), mtimeS: dv.getUint32(p + 8), mtimeN: dv.getUint32(p + 12),
+        dev: dv.getUint32(p + 16), ino: dv.getUint32(p + 20), mode: dv.getUint32(p + 24), uid: dv.getUint32(p + 28),
+        gid: dv.getUint32(p + 32), size: dv.getUint32(p + 36), sha: toHex(buf.subarray(p + 40, p + 60)),
+      };
+      const flags = dv.getUint16(p + 60);
+      e.stage = (flags >> 12) & 3;
+      p += 62;
+      if (flags & 0x4000) p += 2;
+      const nul = buf.indexOf(0, p);
+      e.path = dec(buf.subarray(p, nul));
+      p = start + ((nul - start + 8) & ~7);
+      entries.push(e);
+    }
+    return entries;
+  }
+  function sortIndex(entries) {
+    const keyed = entries.map((e) => ({ e, k: enc(e.path) }));
+    keyed.sort((a, b) => compareBytes(a.k, b.k) || a.e.stage - b.e.stage);
+    return keyed.map((x) => x.e);
+  }
+  function serializeIndex(entries) {
+    const sorted = sortIndex(entries);
+    const parts = [];
+    const head = new Uint8Array(12);
+    head.set(enc('DIRC'));
+    const hv = new DataView(head.buffer);
+    hv.setUint32(4, 2); hv.setUint32(8, sorted.length);
+    parts.push(head);
+    for (const e of sorted) {
+      const pb = enc(e.path);
+      const size = (62 + pb.length + 8) & ~7;
+      const a = new Uint8Array(size);
+      const dv = new DataView(a.buffer);
+      const u = (o, v) => dv.setUint32(o, (v || 0) % 0x100000000);
+      u(0, e.ctimeS); u(4, e.ctimeN); u(8, e.mtimeS); u(12, e.mtimeN); u(16, e.dev); u(20, e.ino);
+      u(24, e.mode); u(28, e.uid); u(32, e.gid); u(36, e.size);
+      a.set(fromHex(e.sha), 40);
+      dv.setUint16(60, ((e.stage || 0) << 12) | Math.min(pb.length, 0xfff));
+      a.set(pb, 62);
+      parts.push(a);
+    }
+    const body = concatBytes(parts);
+    return concatBytes([body, sha1(body)]);
+  }
+  function indexEntry(path, sha, mode, st, stage = 0) {
+    const ms = st ? st.mtimeMs : 0;
+    const s = Math.floor(ms / 1000), ns = Math.floor(ms % 1000) * 1e6;
+    return { path, sha, mode, stage, ctimeS: s, ctimeN: ns, mtimeS: s, mtimeN: ns, dev: 0, ino: 0, uid: 0, gid: 0, size: st ? st.size : 0 };
+  }
+  const statMatches = (e, st) => !!st && e.size === st.size % 0x100000000 && e.mtimeS === Math.floor(st.mtimeMs / 1000) &&
+    Math.floor(e.mtimeN / 1e6) === Math.floor(st.mtimeMs % 1000);
+
+  // ---------- config ----------
+  function parseConfigValue(raw) {
+    let out = '', q = false;
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw[i];
+      if (ch === '"') { q = !q; continue; }
+      if (!q && (ch === '#' || ch === ';')) break;
+      if (ch === '\\' && i + 1 < raw.length) { const n = raw[++i]; out += n === 'n' ? '\n' : n === 't' ? '\t' : n; continue; }
+      out += ch;
+    }
+    return out.trim();
+  }
+  const SECTION_RE = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]/;
+  const KEY_RE = /^\s*([A-Za-z][A-Za-z0-9-]*)\s*(?:=\s*(.*))?$/;
+  function configGet(text, section, sub, key) {
+    let cur = null, val = null;
+    for (const line of text.split('\n')) {
+      const s = SECTION_RE.exec(line);
+      if (s) { cur = { section: s[1].toLowerCase(), sub: s[2] === undefined ? null : s[2].replace(/\\(.)/g, '$1') }; continue; }
+      const k = KEY_RE.exec(line);
+      if (k && cur && cur.section === section && cur.sub === sub && k[1].toLowerCase() === key.toLowerCase()) val = k[2] === undefined ? 'true' : parseConfigValue(k[2]);
+    }
+    return val;
+  }
+  function configSet(text, section, sub, key, value) {
+    const quoted = /^\s|\s$|[#;"\\]/.test(value) ? '"' + value.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"' : value;
+    const lines = text.replace(/\n$/, '').split('\n');
+    let inSec = false, secEnd = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const s = SECTION_RE.exec(lines[i]);
+      if (s) {
+        inSec = s[1].toLowerCase() === section && (s[2] === undefined ? null : s[2]) === sub;
+        if (inSec) secEnd = i;
+        continue;
+      }
+      if (inSec) {
+        secEnd = i;
+        const k = KEY_RE.exec(lines[i]);
+        if (k && k[1].toLowerCase() === key.toLowerCase()) { lines[i] = `\t${key} = ${quoted}`; return lines.join('\n') + '\n'; }
+      }
+    }
+    if (secEnd >= 0) lines.splice(secEnd + 1, 0, `\t${key} = ${quoted}`);
+    else lines.push(sub === null ? `[${section}]` : `[${section} "${sub}"]`, `\t${key} = ${quoted}`);
+    return lines.filter((l, i) => l || i > 0).join('\n') + '\n';
+  }
+
+  // ---------- .gitignore ----------
+  function globToRegex(glob) {
+    let re = '';
+    for (let i = 0; i < glob.length; i++) {
+      const c = glob[i];
+      if (c === '*') {
+        if (glob[i + 1] === '*') {
+          if (glob[i + 2] === '/') { re += '(?:.*/)?'; i += 2; } else { re += '.*'; i += 1; }
+        } else re += '[^/]*';
+      } else if (c === '?') re += '[^/]';
+      else if (c === '[') {
+        const j = glob.indexOf(']', i + 2);
+        if (j < 0) { re += '\\['; continue; }
+        let cls = glob.slice(i + 1, j);
+        if (cls[0] === '!') cls = '^' + cls.slice(1);
+        re += '[' + cls.replace(/\\/g, '\\\\') + ']';
+        i = j;
+      } else if (c === '\\' && i + 1 < glob.length) { re += '\\' + glob[++i]; }
+      else re += /[.+^${}()|\\/]/.test(c) ? '\\' + c : c;
+    }
+    return re;
+  }
+  function parseIgnore(text, base) {
+    const rules = [];
+    for (let line of text.split(/\r?\n/)) {
+      if (!line || line[0] === '#') continue;
+      line = line.replace(/(?<!\\)\s+$/, '');
+      if (!line) continue;
+      let negate = false, dirOnly = false;
+      if (line[0] === '!') { negate = true; line = line.slice(1); }
+      else if (line[0] === '\\') line = line.slice(1);
+      if (line.endsWith('/')) { dirOnly = true; line = line.slice(0, -1); }
+      if (!line) continue;
+      const anchored = line.includes('/');
+      if (line[0] === '/') line = line.slice(1);
+      rules.push({ base, negate, dirOnly, anchored, re: new RegExp('^' + globToRegex(line) + '$') });
+    }
+    return rules;
+  }
+  function isIgnored(rules, path, isDir) {
+    let ignored = false;
+    for (const r of rules) {
+      if (r.dirOnly && !isDir) continue;
+      if (r.base && !path.startsWith(r.base)) continue;
+      const rel = path.slice(r.base.length);
+      const subject = r.anchored ? rel : rel.slice(rel.lastIndexOf('/') + 1);
+      if (r.re.test(subject)) ignored = !r.negate;
+    }
+    return ignored;
+  }
+
+  // ---------- three-way line merge (diff3) ----------
+  function splitLines(text) { return text.match(/[^\n]*\n|[^\n]+$/g) || []; }
+  function lcsMatch(a, b) {
+    const n = a.length, m = b.length;
+    const res = new Int32Array(n).fill(-1);
+    let s = 0;
+    while (s < n && s < m && a[s] === b[s]) { res[s] = s; s++; }
+    let ea = n, eb = m;
+    while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; res[ea] = eb; }
+    const N = ea - s, M = eb - s;
+    if (!N || !M || N * M > 4e6) return res;
+    const W = M + 1;
+    const dp = new Uint32Array((N + 1) * W);
+    for (let i = N - 1; i >= 0; i--) for (let j = M - 1; j >= 0; j--) {
+      dp[i * W + j] = a[s + i] === b[s + j] ? dp[(i + 1) * W + j + 1] + 1 : Math.max(dp[(i + 1) * W + j], dp[i * W + j + 1]);
+    }
+    let i = 0, j = 0;
+    while (i < N && j < M) {
+      if (a[s + i] === b[s + j]) { res[s + i] = s + j; i++; j++; }
+      else if (dp[(i + 1) * W + j] >= dp[i * W + j + 1]) i++;
+      else j++;
+    }
+    return res;
+  }
+  function merge3(baseText, oursText, theirsText, oursLabel, theirsLabel) {
+    const o = splitLines(baseText), a = splitLines(oursText), b = splitLines(theirsText);
+    const ma = lcsMatch(o, a), mb = lcsMatch(o, b);
+    const eq = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+    const out = [];
+    let conflicts = 0, io = 0, ia = 0, ib = 0;
+    const withNl = (lines) => lines.map((l, i) => (i === lines.length - 1 && !l.endsWith('\n') ? l + '\n' : l));
+    while (io < o.length || ia < a.length || ib < b.length) {
+      let j = 0;
+      while (io + j < o.length && ma[io + j] === ia + j && mb[io + j] === ib + j) j++;
+      if (j > 0) { out.push(...o.slice(io, io + j)); io += j; ia += j; ib += j; continue; }
+      let k = io;
+      while (k < o.length && !(ma[k] >= 0 && mb[k] >= 0)) k++;
+      const ea = k < o.length ? ma[k] : a.length, eb = k < o.length ? mb[k] : b.length;
+      const oc = o.slice(io, k), ac = a.slice(ia, ea), bc = b.slice(ib, eb);
+      if (eq(ac, oc)) out.push(...bc);
+      else if (eq(bc, oc) || eq(ac, bc)) out.push(...ac);
+      else {
+        // Like git's default (zealous) level: lines both sides agree on stay outside the markers.
+        let pre = 0, post = 0;
+        while (pre < ac.length && pre < bc.length && ac[pre] === bc[pre]) pre++;
+        while (post < ac.length - pre && post < bc.length - pre && ac[ac.length - 1 - post] === bc[bc.length - 1 - post]) post++;
+        conflicts++;
+        out.push(...ac.slice(0, pre), `<<<<<<< ${oursLabel}\n`, ...withNl(ac.slice(pre, ac.length - post)), '=======\n',
+          ...withNl(bc.slice(pre, bc.length - post)), `>>>>>>> ${theirsLabel}\n`, ...ac.slice(ac.length - post));
+      }
+      io = k; ia = ea; ib = eb;
+    }
+    return { conflicts, text: out.join('') };
+  }
+  function looksBinary(bytes) {
+    const n = Math.min(bytes.length, 8000);
+    for (let i = 0; i < n; i++) if (bytes[i] === 0) return true;
+    try { tdStrict.decode(bytes); return false; } catch (e) { return true; }
+  }
+
+  // ---------- pkt-line ----------
+  function pktLine(s) {
+    const b = typeof s === 'string' ? enc(s) : s;
+    return concatBytes([enc((b.length + 4).toString(16).padStart(4, '0')), b]);
+  }
+  function parsePktLines(buf) {
+    const lines = [];
+    let p = 0;
+    while (p + 4 <= buf.length) {
+      const len = parseInt(dec(buf.subarray(p, p + 4)), 16);
+      if (Number.isNaN(len)) throw new Error('invalid pkt-line from server');
+      if (len === 0) { lines.push(null); p += 4; continue; }
+      if (len < 4) { p += 4; continue; }
+      lines.push(buf.subarray(p + 4, p + len));
+      p += len;
+    }
+    return lines;
+  }
+  function b64(s) {
+    const bytes = enc(s);
+    let bin = '';
+    for (const x of bytes) bin += String.fromCharCode(x);
+    return btoa(bin);
+  }
+
+  const BRANCH_RE_BAD = /(^[-.\/])|(\/\.)|(\.\.)|([\x00-\x20~^:?*\[\\\x7f])|(@\{)|(\/\/)|(\.lock$)|(\.lock\/)|([\/.]$)|(^@$)/;
+  function validBranchName(name) { return !!name && !BRANCH_RE_BAD.test(name); }
+
+  // ---------- repository ----------
+  class Repo {
+    constructor(fs) {
+      this.fs = fs;
+      this.cache = new Map();
+      this.packs = null;
+    }
+
+    // --- basic state ---
+    async kind() {
+      const st = await this.fs.stat('.git');
+      if (!st) return 'none';
+      if (st.kind === 'file') return 'gitfile';
+      return (await this.fs.stat('.git/HEAD')) ? 'repo' : 'none';
+    }
+    async init(branch = 'main') {
+      if (!validBranchName(branch)) throw new Error(`'${branch}' is not a valid branch name`);
+      const kind = await this.kind();
+      if (kind === 'repo') return { reinitialized: true };
+      if (kind === 'gitfile') throw new Error('.git is a file (linked worktree or submodule); html-git cannot follow it');
+      for (const d of ['.git', '.git/objects', '.git/objects/info', '.git/objects/pack', '.git/refs', '.git/refs/heads', '.git/refs/tags', '.git/info', '.git/hooks']) await this.fs.mkdir(d);
+      await this.fs.writeFile('.git/config', '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n');
+      await this.fs.writeFile('.git/description', "Unnamed repository; edit this file 'description' to name the repository.\n");
+      await this.fs.writeFile('.git/info/exclude', "# git ls-files --others --exclude-from=.git/info/exclude\n# Lines that start with '#' are comments.\n");
+      await this.fs.writeFile('.git/HEAD', `ref: refs/heads/${branch}\n`);
+      return { reinitialized: false };
+    }
+    async readText(path) { const b = await this.fs.readFile(path); return b ? dec(b) : null; }
+
+    // --- config ---
+    async getConfig(section, sub, key) {
+      const t = await this.readText('.git/config');
+      return t === null ? null : configGet(t, section, sub, key);
+    }
+    async setConfig(section, sub, key, value) {
+      const t = (await this.readText('.git/config')) || '';
+      await this.fs.writeFile('.git/config', configSet(t, section, sub, key, value));
+    }
+
+    // --- objects ---
+    async loadPacks() {
+      if (this.packs) return this.packs;
+      this.packs = [];
+      for (const ent of (await this.fs.readdir('.git/objects/pack')) || []) {
+        if (ent.kind !== 'file' || !ent.name.endsWith('.idx')) continue;
+        const idx = await this.fs.readFile('.git/objects/pack/' + ent.name);
+        if (idx) this.packs.push({ path: '.git/objects/pack/' + ent.name.replace(/\.idx$/, '.pack'), idx: parsePackIndex(idx), data: null });
+      }
+      return this.packs;
+    }
+    async findPacked(sha) {
+      for (const pack of await this.loadPacks()) {
+        const off = pack.idx.find(sha);
+        if (off >= 0) return { pack, off };
+      }
+      return null;
+    }
+    async readPacked(pack, offset) {
+      if (!pack.data) {
+        pack.data = await this.fs.readFile(pack.path);
+        if (!pack.data) throw new Error(`missing pack file ${pack.path}`);
+      }
+      const d = pack.data;
+      let p = offset, c = d[p++];
+      const type = (c >> 4) & 7;
+      let size = c & 15, shift = 4;
+      while (c & 0x80) { c = d[p++]; size += (c & 0x7f) * 2 ** shift; shift += 7; }
+      if (type === 6) {
+        c = d[p++];
+        let ofs = c & 0x7f;
+        while (c & 0x80) { c = d[p++]; ofs = (ofs + 1) * 128 + (c & 0x7f); }
+        const base = await this.readPacked(pack, offset - ofs);
+        return { type: base.type, body: applyDelta(base.body, inflate(d, p, size).data) };
+      }
+      if (type === 7) {
+        const base = await this.readObject(toHex(d.subarray(p, p + 20)));
+        return { type: base.type, body: applyDelta(base.body, inflate(d, p + 20, size).data) };
+      }
+      if (!PACK_TYPES[type]) throw new Error(`unknown pack object type ${type}`);
+      return { type: PACK_TYPES[type], body: inflate(d, p, size).data };
+    }
+    loosePath(sha) { return `.git/objects/${sha.slice(0, 2)}/${sha.slice(2)}`; }
+    async readObject(sha) {
+      if (this.cache.has(sha)) return this.cache.get(sha);
+      let obj;
+      const raw = await this.fs.readFile(this.loosePath(sha));
+      if (raw) obj = parseLooseObject(inflate(raw).data);
+      else {
+        const hit = await this.findPacked(sha);
+        if (!hit) throw new Error(`object ${sha} not found`);
+        obj = await this.readPacked(hit.pack, hit.off);
+      }
+      this.cache.set(sha, obj);
+      return obj;
+    }
+    async readTyped(sha, type) {
+      const o = await this.readObject(sha);
+      if (o.type !== type) throw new Error(`object ${sha} is a ${o.type}, expected ${type}`);
+      return o.body;
+    }
+    async hasObject(sha) {
+      if (this.cache.has(sha)) return true;
+      if (await this.fs.stat(this.loosePath(sha))) return true;
+      return !!(await this.findPacked(sha));
+    }
+    async writeObject(type, body) {
+      const sha = hashObject(type, body);
+      if (!(await this.hasObject(sha))) await this.fs.writeFile(this.loosePath(sha), deflate(frameObject(type, body)));
+      this.cache.set(sha, { type, body });
+      return sha;
+    }
+    async readCommit(sha) { return parseCommit(await this.readTyped(sha, 'commit')); }
+
+    // --- refs ---
+    async readRefRaw(name) { const t = await this.readText('.git/' + name); return t === null ? null : t.trim(); }
+    async packedRefs() {
+      const t = await this.readText('.git/packed-refs');
+      const map = new Map();
+      if (t) for (const line of t.split('\n')) {
+        if (!line || line[0] === '#' || line[0] === '^') continue;
+        const [sha, name] = line.split(' ');
+        if (isSha(sha) && name) map.set(name, sha);
+      }
+      return map;
+    }
+    async resolveRef(name, depth = 0) {
+      if (depth > 5) throw new Error(`symbolic ref loop at ${name}`);
+      let v = await this.readRefRaw(name);
+      if (v === null && name !== 'HEAD') v = (await this.packedRefs()).get(name) || null;
+      if (v === null) return null;
+      if (v.startsWith('ref: ')) return this.resolveRef(v.slice(5).trim(), depth + 1);
+      return isSha(v) ? v : null;
+    }
+    async head() {
+      const v = await this.readRefRaw('HEAD');
+      if (v && v.startsWith('ref: ')) {
+        const ref = v.slice(5).trim();
+        return { ref, branch: ref.startsWith('refs/heads/') ? ref.slice(11) : null, sha: await this.resolveRef(ref) };
+      }
+      return { ref: null, branch: null, sha: isSha(v) ? v : null };
+    }
+    async resolveRev(rev) {
+      if (isSha(rev)) return rev;
+      for (const r of [rev, `refs/heads/${rev}`, `refs/tags/${rev}`, `refs/remotes/${rev}`]) {
+        const sha = await this.resolveRef(r);
+        if (sha) return sha;
+      }
+      return null;
+    }
+    async listRefs(prefix) {
+      const out = new Map();
+      for (const [name, sha] of await this.packedRefs()) if (name.startsWith(prefix)) out.set(name, sha);
+      const walk = async (dir) => {
+        for (const ent of (await this.fs.readdir('.git/' + dir)) || []) {
+          const p = `${dir}/${ent.name}`;
+          if (ent.kind === 'directory') await walk(p);
+          else {
+            const v = await this.readRefRaw(p);
+            if (isSha(v)) out.set(p, v);
+          }
+        }
+      };
+      await walk(prefix.replace(/\/$/, ''));
+      return out;
+    }
+    async branches() {
+      const refs = await this.listRefs('refs/heads/');
+      return [...refs].map(([ref, sha]) => ({ name: ref.slice(11), sha })).sort((a, b) => comparePaths(a.name, b.name));
+    }
+    async appendReflog(ref, oldSha, newSha, identLine, msg) {
+      const path = '.git/logs/' + ref;
+      const prev = (await this.fs.readFile(path)) || new Uint8Array(0);
+      const line = enc(`${oldSha || ZERO_SHA} ${newSha} ${identLine}\t${msg.split('\n')[0]}\n`);
+      await this.fs.writeFile(path, concatBytes([prev, line]));
+    }
+    async updateRef(ref, newSha, oldSha, identLine, msg, alsoHead) {
+      await this.fs.writeFile('.git/' + ref, newSha + '\n');
+      if (identLine) {
+        if (ref !== 'HEAD') await this.appendReflog(ref, oldSha, newSha, identLine, msg);
+        if (alsoHead) await this.appendReflog('HEAD', oldSha, newSha, identLine, msg);
+      }
+    }
+    // Moves the current branch (or detached HEAD) to newSha.
+    async advanceHead(newSha, identLine, msg) {
+      const h = await this.head();
+      if (h.ref) await this.updateRef(h.ref, newSha, h.sha, identLine, msg, true);
+      else await this.updateRef('HEAD', newSha, h.sha, identLine, msg, true);
+    }
+
+    // --- index & trees ---
+    async readIndex() {
+      const b = await this.fs.readFile('.git/index');
+      return b ? parseIndex(b) : [];
+    }
+    async writeIndex(entries) { await this.fs.writeFile('.git/index', serializeIndex(entries)); }
+    async writeTreeFromMap(map) {
+      const root = new Map();
+      for (const [path, v] of map) {
+        const parts = path.split('/');
+        let node = root;
+        for (let i = 0; i < parts.length - 1; i++) {
+          if (!node.has(parts[i])) node.set(parts[i], new Map());
+          node = node.get(parts[i]);
+          if (!(node instanceof Map)) throw new Error(`path conflict at ${path}`);
+        }
+        node.set(parts[parts.length - 1], v);
+      }
+      const write = async (node) => {
+        const entries = [];
+        for (const [name, child] of node) {
+          if (child instanceof Map) entries.push({ mode: MODE.TREE, name, sha: await write(child) });
+          else entries.push({ mode: child.mode, name, sha: child.sha });
+        }
+        return this.writeObject('tree', serializeTree(entries));
+      };
+      return write(root);
+    }
+    async flattenTree(treeSha, prefix = '', out = new Map()) {
+      for (const e of parseTree(await this.readTyped(treeSha, 'tree'))) {
+        if (e.mode === MODE.TREE) await this.flattenTree(e.sha, prefix + e.name + '/', out);
+        else out.set(prefix + e.name, { mode: e.mode, sha: e.sha });
+      }
+      return out;
+    }
+    async commitMap(sha) { return sha ? this.flattenTree((await this.readCommit(sha)).tree) : new Map(); }
+
+    // --- working tree ---
+    async ignoreRules() {
+      const ex = await this.readText('.git/info/exclude');
+      return ex ? parseIgnore(ex, '') : [];
+    }
+    async walkWorktree() {
+      const files = new Map();
+      const rules = await this.ignoreRules();
+      const walk = async (dir, rules) => {
+        const ents = (await this.fs.readdir(dir)) || [];
+        const gi = ents.find((e) => e.name === '.gitignore' && e.kind === 'file');
+        if (gi) rules = rules.concat(parseIgnore((await this.readText((dir ? dir + '/' : '') + '.gitignore')) || '', dir ? dir + '/' : ''));
+        ents.sort((a, b) => comparePaths(a.name, b.name));
+        for (const ent of ents) {
+          if (!dir && ent.name === '.git') continue;
+          if (ent.name.endsWith('.crswap')) continue;
+          const p = dir ? `${dir}/${ent.name}` : ent.name;
+          const isDir = ent.kind === 'directory';
+          if (isIgnored(rules, p, isDir)) continue;
+          if (isDir) {
+            if (await this.fs.stat(p + '/.git')) continue;
+            await walk(p, rules);
+          } else files.set(p, await this.fs.stat(p));
+        }
+      };
+      await walk('', rules);
+      return files;
+    }
+    async pruneEmptyDirs(path) {
+      const parts = path.split('/');
+      for (let i = parts.length - 1; i > 0; i--) {
+        const dir = parts.slice(0, i).join('/');
+        const ents = await this.fs.readdir(dir);
+        if (!ents || ents.length) return;
+        await this.fs.remove(dir);
+      }
+    }
+    // Makes the working tree go from `fromMap` to `toMap` (both path -> {mode, sha}).
+    async applyTreeChange(fromMap, toMap) {
+      for (const p of fromMap.keys()) {
+        if (toMap.has(p)) continue;
+        await this.fs.remove(p);
+        await this.pruneEmptyDirs(p);
+      }
+      for (const [p, v] of toMap) {
+        if (v.mode === MODE.GITLINK) { await this.fs.mkdir(p); continue; }
+        const f = fromMap.get(p);
+        const st = await this.fs.stat(p);
+        if (f && f.sha === v.sha && st && st.kind === 'file') continue;
+        await this.fs.writeFile(p, await this.readTyped(v.sha, 'blob'));
+      }
+    }
+    async indexFromMap(map) {
+      const entries = [];
+      for (const [p, v] of map) {
+        const st = v.mode === MODE.GITLINK ? null : await this.fs.stat(p);
+        entries.push(indexEntry(p, v.sha, v.mode, st && st.kind === 'file' ? st : null));
+      }
+      return entries;
+    }
+
+    // --- status ---
+    async status({ all = false } = {}) {
+      const head = await this.head();
+      const headMap = await this.commitMap(head.sha);
+      const index = await this.readIndex();
+      const idx = new Map(), conflicted = new Set();
+      for (const e of index) { if (e.stage === 0) idx.set(e.path, e); else conflicted.add(e.path); }
+      const work = await this.walkWorktree();
+      for (const p of [...idx.keys(), ...conflicted]) {
+        if (work.has(p)) continue;
+        const st = await this.fs.stat(p);
+        if (st && st.kind === 'file') work.set(p, st);
+      }
+      const paths = [...new Set([...headMap.keys(), ...idx.keys(), ...conflicted, ...work.keys()])].sort(comparePaths);
+      const entries = [];
+      for (const path of paths) {
+        const h = headMap.get(path), i = idx.get(path), st = work.get(path);
+        let workSha = null;
+        if (st) workSha = i && statMatches(i, st) ? i.sha : hashObject('blob', await this.fs.readFile(path));
+        let x, y;
+        if (conflicted.has(path)) { x = 'U'; y = 'U'; }
+        else if (!i && !h) { x = '?'; y = '?'; }
+        else {
+          x = !i ? 'D' : !h ? 'A' : (i.sha !== h.sha || i.mode !== h.mode) ? 'M' : ' ';
+          y = !i ? ' ' : !st ? 'D' : workSha !== i.sha ? 'M' : ' ';
+        }
+        if (!all && x === ' ' && y === ' ') continue;
+        if (!i && !h && !st) continue;
+        entries.push({ path, x, y, head: h ? h.sha : null, index: i ? i.sha : null, work: workSha });
+      }
+      const mergeHead = await this.readRefRaw('MERGE_HEAD');
+      return { head, entries, merging: isSha(mergeHead) ? mergeHead : null };
+    }
+    dirtyTracked(status) {
+      return status.entries.filter((e) => !(e.x === '?' && e.y === '?') && (e.x !== ' ' || e.y !== ' '));
+    }
+    async requireClean(what) {
+      const st = await this.status();
+      if (st.merging) throw new Error(`cannot ${what}: a merge is in progress (commit it or abort it first)`);
+      const dirty = this.dirtyTracked(st);
+      if (dirty.length) throw new Error(`cannot ${what}: you have uncommitted changes to tracked files:\n  ${dirty.map((e) => e.path).join('\n  ')}\nCommit them first.`);
+      return st;
+    }
+    async checkOverwrite(fromMap, toMap, status) {
+      const untracked = new Set(status.entries.filter((e) => e.x === '?').map((e) => e.path));
+      const hit = [];
+      for (const p of toMap.keys()) {
+        if (fromMap.has(p)) continue;
+        if (untracked.has(p) || (await this.fs.stat(p))) hit.push(p);
+      }
+      if (hit.length) throw new Error(`untracked files would be overwritten:\n  ${hit.join('\n  ')}\nMove or remove them first.`);
+    }
+
+    // --- add ---
+    async add(paths) {
+      const index = await this.readIndex();
+      const byPath = new Map();
+      for (const e of index) { if (!byPath.has(e.path)) byPath.set(e.path, []); byPath.get(e.path).push(e); }
+      const done = [];
+      for (const path of paths) {
+        const st = await this.fs.stat(path);
+        const old = (byPath.get(path) || []).find((e) => e.stage === 0) || (byPath.get(path) || [])[0];
+        if (st && st.kind === 'file') {
+          const sha = await this.writeObject('blob', await this.fs.readFile(path));
+          const mode = old && (old.mode === MODE.EXEC || old.mode === MODE.LINK) ? old.mode : MODE.FILE;
+          byPath.set(path, [indexEntry(path, sha, mode, st)]);
+          done.push({ path, action: 'add' });
+        } else if (byPath.has(path)) {
+          byPath.delete(path);
+          done.push({ path, action: 'remove' });
+        } else throw new Error(`pathspec '${path}' did not match any files`);
+      }
+      await this.writeIndex([].concat(...byPath.values()));
+      return done;
+    }
+
+    // --- commit ---
+    async writeCommit({ tree, parents, identLine, message }) {
+      let body = `tree ${tree}\n`;
+      for (const p of parents) body += `parent ${p}\n`;
+      body += `author ${identLine}\ncommitter ${identLine}\n\n${message}`;
+      return this.writeObject('commit', enc(body));
+    }
+    async commit({ message, ident, date }) {
+      const msg = cleanMessage(message);
+      if (!msg) throw new Error('Aborting commit due to empty commit message.');
+      const identLine = makeIdent(ident, date);
+      const index = await this.readIndex();
+      const unmerged = [...new Set(index.filter((e) => e.stage).map((e) => e.path))];
+      if (unmerged.length) throw new Error(`cannot commit: unmerged paths (resolve them and add them first):\n  ${unmerged.join('\n  ')}`);
+      const head = await this.head();
+      const mergeRaw = await this.readRefRaw('MERGE_HEAD');
+      const mergeHead = isSha(mergeRaw) ? mergeRaw : null;
+      const map = new Map(index.map((e) => [e.path, { mode: e.mode, sha: e.sha }]));
+      if (!map.size && !head.sha) throw new Error('nothing to commit (stage files with add first)');
+      const tree = await this.writeTreeFromMap(map);
+      if (head.sha && !mergeHead && (await this.readCommit(head.sha)).tree === tree) throw new Error('nothing to commit, working tree unchanged (stage files with add first)');
+      const parents = head.sha ? [head.sha] : [];
+      if (mergeHead) parents.push(mergeHead);
+      const sha = await this.writeCommit({ tree, parents, identLine, message: msg });
+      const kind = !head.sha ? 'commit (initial)' : mergeHead ? 'commit (merge)' : 'commit';
+      await this.advanceHead(sha, identLine, `${kind}: ${msg.split('\n')[0]}`);
+      for (const f of ['MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE']) await this.fs.remove('.git/' + f);
+      return { sha, parents, branch: head.branch };
+    }
+
+    // --- branch ---
+    async createBranch(name, { ident, switchTo = false } = {}) {
+      if (!validBranchName(name)) throw new Error(`'${name}' is not a valid branch name`);
+      if (await this.resolveRef('refs/heads/' + name)) throw new Error(`a branch named '${name}' already exists`);
+      const head = await this.head();
+      if (!head.sha) throw new Error('cannot create a branch before the first commit');
+      const identLine = ident ? makeIdent(ident) : null;
+      await this.updateRef('refs/heads/' + name, head.sha, null, identLine, 'branch: Created from HEAD', false);
+      if (switchTo) {
+        // Same commit, so the index and working tree stay as they are (like `git switch -c`).
+        await this.fs.writeFile('.git/HEAD', `ref: refs/heads/${name}\n`);
+        if (identLine) await this.appendReflog('HEAD', head.sha, head.sha, identLine, `checkout: moving from ${head.branch || head.sha} to ${name}`);
+      }
+      return head.sha;
+    }
+    async switchBranch(name, { ident } = {}) {
+      const target = await this.resolveRef('refs/heads/' + name);
+      if (!target) throw new Error(`no branch named '${name}'`);
+      const status = await this.requireClean('switch branches');
+      const head = status.head;
+      if (head.branch === name) return { already: true };
+      const fromMap = await this.commitMap(head.sha);
+      const toMap = await this.commitMap(target);
+      await this.checkOverwrite(fromMap, toMap, status);
+      await this.applyTreeChange(fromMap, toMap);
+      await this.writeIndex(await this.indexFromMap(toMap));
+      await this.fs.writeFile('.git/HEAD', `ref: refs/heads/${name}\n`);
+      if (ident) await this.appendReflog('HEAD', head.sha, target, makeIdent(ident), `checkout: moving from ${head.branch || head.sha} to ${name}`);
+      return { already: false, sha: target };
+    }
+
+    // --- history helpers ---
+    async ancestors(sha) {
+      const seen = new Set();
+      const stack = [sha];
+      while (stack.length) {
+        const s = stack.pop();
+        if (seen.has(s)) continue;
+        seen.add(s);
+        for (const p of (await this.readCommit(s)).parents) stack.push(p);
+      }
+      return seen;
+    }
+    async isAncestor(anc, desc) { return (await this.ancestors(desc)).has(anc); }
+    async mergeBase(a, b) {
+      const aa = await this.ancestors(a);
+      const common = [...(await this.ancestors(b))].filter((s) => aa.has(s));
+      const notBest = new Set();
+      for (const c of common) for (const p of (await this.readCommit(c)).parents) notBest.add(p);
+      const best = common.filter((c) => !notBest.has(c));
+      if (best.length <= 1) return best[0] || null;
+      let pick = best[0], t = -1;
+      for (const c of best) { const ct = (await this.readCommit(c)).committer.time; if (ct > t) { t = ct; pick = c; } }
+      return pick;
+    }
+    async log(sha, limit = 30) {
+      const out = [], seen = new Set();
+      let frontier = sha ? [sha] : [];
+      while (frontier.length && out.length < limit) {
+        const commits = [];
+        for (const s of frontier) commits.push({ sha: s, ...(await this.readCommit(s)) });
+        commits.sort((a, b) => b.committer.time - a.committer.time);
+        const next = commits.shift();
+        out.push(next);
+        frontier = commits.map((c) => c.sha);
+        for (const p of next.parents) if (!seen.has(p)) { seen.add(p); frontier.push(p); }
+      }
+      return out;
+    }
+
+    // --- merge ---
+    async merge(name, { ident, date } = {}) {
+      const status = await this.requireClean('merge');
+      const head = status.head;
+      if (!head.sha) throw new Error('cannot merge: the current branch has no commits yet');
+      const theirs = await this.resolveRev(name);
+      if (!theirs) throw new Error(`'${name}' does not name a branch or commit`);
+      if (theirs === head.sha || (await this.isAncestor(theirs, head.sha))) return { result: 'up-to-date' };
+      const identLine = makeIdent(ident, date);
+      const oursMap = await this.commitMap(head.sha);
+      const theirsMap = await this.commitMap(theirs);
+      if (await this.isAncestor(head.sha, theirs)) {
+        await this.checkOverwrite(oursMap, theirsMap, status);
+        await this.applyTreeChange(oursMap, theirsMap);
+        await this.writeIndex(await this.indexFromMap(theirsMap));
+        await this.fs.writeFile('.git/ORIG_HEAD', head.sha + '\n');
+        await this.advanceHead(theirs, identLine, `merge ${name}: Fast-forward`);
+        return { result: 'fast-forward', from: head.sha, sha: theirs };
+      }
+      const base = await this.mergeBase(head.sha, theirs);
+      const baseMap = await this.commitMap(base);
+      const same = (x, y) => (!x && !y) || (!!x && !!y && x.sha === y.sha && x.mode === y.mode);
+      const isFile = (e) => e.mode === MODE.FILE || e.mode === MODE.EXEC;
+      const blob = (e) => this.readTyped(e.sha, 'blob');
+      const result = new Map(), conflicts = [];
+      const paths = [...new Set([...baseMap.keys(), ...oursMap.keys(), ...theirsMap.keys()])].sort(comparePaths);
+      for (const p of paths) {
+        const b = baseMap.get(p), o = oursMap.get(p), t = theirsMap.get(p);
+        if (same(o, t)) { if (o) result.set(p, o); continue; }
+        if (same(b, o)) { if (t) result.set(p, t); continue; }
+        if (same(b, t)) { if (o) result.set(p, o); continue; }
+        const mode = o && t ? (b && b.mode === o.mode ? t.mode : o.mode) : null;
+        if (o && t && o.sha === t.sha) { result.set(p, { mode, sha: o.sha }); continue; }
+        if (o && t && isFile(o) && isFile(t)) {
+          const ob = await blob(o), tb = await blob(t), bb = b && isFile(b) ? await blob(b) : new Uint8Array(0);
+          if (!looksBinary(ob) && !looksBinary(tb) && !looksBinary(bb)) {
+            const m = merge3(dec(bb), dec(ob), dec(tb), 'HEAD', name);
+            if (!m.conflicts) { result.set(p, { mode, sha: await this.writeObject('blob', enc(m.text)) }); continue; }
+            conflicts.push({ path: p, b, o, t, content: enc(m.text), reason: b ? 'content' : 'add/add' });
+            continue;
+          }
+          conflicts.push({ path: p, b, o, t, content: ob, reason: 'binary' });
+          continue;
+        }
+        conflicts.push({ path: p, b, o, t, content: null, reason: !o ? 'modify/delete (deleted in HEAD)' : !t ? `modify/delete (deleted in ${name})` : 'type' });
+      }
+      const workMap = new Map(result);
+      for (const c of conflicts) workMap.set(c.path, c.o || c.t);
+      const keys = [...workMap.keys()];
+      const set = new Set(keys);
+      for (const k of keys) {
+        const parts = k.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          if (set.has(parts.slice(0, i).join('/'))) throw new Error(`cannot merge: file/directory conflict at '${parts.slice(0, i).join('/')}' (not supported by html-git)`);
+        }
+      }
+      await this.checkOverwrite(oursMap, workMap, status);
+      const cur = head.branch;
+      const msg = `Merge branch '${name}'` + (cur && cur !== 'main' && cur !== 'master' ? ` into ${cur}` : '') + '\n';
+      if (!conflicts.length) {
+        const tree = await this.writeTreeFromMap(result);
+        const sha = await this.writeCommit({ tree, parents: [head.sha, theirs], identLine, message: msg });
+        await this.applyTreeChange(oursMap, result);
+        await this.writeIndex(await this.indexFromMap(result));
+        await this.fs.writeFile('.git/ORIG_HEAD', head.sha + '\n');
+        await this.advanceHead(sha, identLine, `merge ${name}: Merge made by the 'ort' strategy.`);
+        return { result: 'merged', sha, base };
+      }
+      await this.applyTreeChange(oursMap, workMap);
+      for (const c of conflicts) {
+        const content = c.content || (c.o ? null : await blob(c.t));
+        if (content) await this.fs.writeFile(c.path, content);
+      }
+      const entries = await this.indexFromMap(result);
+      for (const c of conflicts) {
+        if (c.b) entries.push(indexEntry(c.path, c.b.sha, c.b.mode, null, 1));
+        if (c.o) entries.push(indexEntry(c.path, c.o.sha, c.o.mode, null, 2));
+        if (c.t) entries.push(indexEntry(c.path, c.t.sha, c.t.mode, null, 3));
+      }
+      await this.writeIndex(entries);
+      await this.fs.writeFile('.git/ORIG_HEAD', head.sha + '\n');
+      await this.fs.writeFile('.git/MERGE_HEAD', theirs + '\n');
+      await this.fs.writeFile('.git/MERGE_MODE', '');
+      await this.fs.writeFile('.git/MERGE_MSG', msg + '\n# Conflicts:\n' + conflicts.map((c) => `#\t${c.path}\n`).join(''));
+      return { result: 'conflict', conflicts: conflicts.map((c) => ({ path: c.path, reason: c.reason })), base };
+    }
+    async mergeMessage() {
+      const t = await this.readText('.git/MERGE_MSG');
+      return t === null ? null : t.split('\n').filter((l) => !l.startsWith('#')).join('\n').trim();
+    }
+    async abortMerge() {
+      if (!isSha(await this.readRefRaw('MERGE_HEAD'))) throw new Error('there is no merge to abort');
+      const head = await this.head();
+      const headMap = await this.commitMap(head.sha);
+      const index = await this.readIndex();
+      const fromMap = new Map();
+      for (const e of index) fromMap.set(e.path, { mode: e.mode, sha: e.stage ? ZERO_SHA : e.sha });
+      await this.applyTreeChange(fromMap, headMap);
+      await this.writeIndex(await this.indexFromMap(headMap));
+      for (const f of ['MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE']) await this.fs.remove('.git/' + f);
+    }
+
+    // --- push (smart HTTP, receive-pack) ---
+    async collectObjects(tips, exclude = new Set()) {
+      const out = [];
+      const seen = new Set(exclude);
+      const walkTree = async (sha) => {
+        if (seen.has(sha)) return;
+        seen.add(sha);
+        out.push(sha);
+        for (const e of parseTree(await this.readTyped(sha, 'tree'))) {
+          if (e.mode === MODE.GITLINK) continue;
+          if (e.mode === MODE.TREE) await walkTree(e.sha);
+          else if (!seen.has(e.sha)) { seen.add(e.sha); out.push(e.sha); }
+        }
+      };
+      const stack = [...tips];
+      while (stack.length) {
+        const sha = stack.pop();
+        if (seen.has(sha)) continue;
+        seen.add(sha);
+        out.push(sha);
+        const c = await this.readCommit(sha);
+        await walkTree(c.tree);
+        for (const p of c.parents) stack.push(p);
+      }
+      return out;
+    }
+    async buildPack(shas) {
+      const parts = [];
+      const head = new Uint8Array(12);
+      head.set(enc('PACK'));
+      const hv = new DataView(head.buffer);
+      hv.setUint32(4, 2); hv.setUint32(8, shas.length);
+      parts.push(head);
+      const typeNum = { commit: 1, tree: 2, blob: 3, tag: 4 };
+      for (const sha of shas) {
+        const { type, body } = await this.readObject(sha);
+        let size = body.length;
+        const hdr = [(typeNum[type] << 4) | (size & 15)];
+        size = Math.floor(size / 16);
+        while (size > 0) { hdr[hdr.length - 1] |= 0x80; hdr.push(size & 0x7f); size = Math.floor(size / 128); }
+        parts.push(new Uint8Array(hdr), deflate(body));
+      }
+      const pack = concatBytes(parts);
+      return concatBytes([pack, sha1(pack)]);
+    }
+    async push({ url, branch, username, token, corsProxy, remote = 'origin', fetch: fetchImpl }) {
+      const doFetch = fetchImpl || globalThis.fetch.bind(globalThis);
+      if (!/^https?:\/\//i.test(url || '')) throw new Error('remote URL must start with https:// (or http://)');
+      const localSha = await this.resolveRef('refs/heads/' + branch);
+      if (!localSha) throw new Error(`branch '${branch}' has no commits`);
+      let endpoint = url.replace(/\/+$/, '');
+      if (corsProxy) endpoint = corsProxy.replace(/\/+$/, '') + '/' + endpoint.replace(/^https?:\/\//i, '');
+      const headers = {};
+      if (token) headers.Authorization = 'Basic ' + b64(`${username || 'x-access-token'}:${token}`);
+      let res;
+      try {
+        res = await doFetch(endpoint + '/info/refs?service=git-receive-pack', { headers });
+      } catch (e) {
+        throw new Error(`could not reach ${endpoint} (${e.message}). If the server does not send CORS headers, set a CORS proxy.`);
+      }
+      if (res.status === 401 || res.status === 403) throw new Error(`authentication failed (HTTP ${res.status}); check the username/token`);
+      if (!res.ok) throw new Error(`remote answered HTTP ${res.status} for info/refs`);
+      const ctype = res.headers.get('content-type') || '';
+      if (!ctype.includes('application/x-git-receive-pack-advertisement')) throw new Error('remote does not speak the git smart HTTP protocol (unexpected content-type ' + (ctype || 'none') + ')');
+      const lines = parsePktLines(new Uint8Array(await res.arrayBuffer()));
+      const refs = new Map();
+      let caps = [];
+      let sawService = false;
+      for (const l of lines) {
+        if (l === null) continue;
+        let s = dec(l);
+        if (s.startsWith('# service=')) { sawService = true; continue; }
+        const nul = s.indexOf('\0');
+        if (nul >= 0) { caps = s.slice(nul + 1).trim().split(' '); s = s.slice(0, nul); }
+        const [sha, name] = s.trim().split(' ');
+        if (isSha(sha) && name && name !== 'capabilities^{}') refs.set(name, sha);
+      }
+      if (!sawService) throw new Error('unexpected info/refs response from remote');
+      const ref = 'refs/heads/' + branch;
+      const remoteSha = refs.get(ref) || ZERO_SHA;
+      const trackRef = `refs/remotes/${remote}/${branch}`;
+      if (remoteSha === localSha) {
+        await this.fs.writeFile('.git/' + trackRef, localSha + '\n');
+        return { result: 'up-to-date', sha: localSha };
+      }
+      if (remoteSha !== ZERO_SHA) {
+        if (!(await this.hasObject(remoteSha))) throw new Error(`rejected: the remote ${ref} contains commits you do not have locally (fetch/pull is not supported by html-git)`);
+        if (!(await this.isAncestor(remoteSha, localSha))) throw new Error(`rejected: non-fast-forward push to ${ref} (the remote has diverged)`);
+      }
+      const haves = [];
+      for (const sha of new Set(refs.values())) {
+        if ((await this.hasObject(sha)) && (await this.readObject(sha)).type === 'commit') haves.push(sha);
+      }
+      const exclude = new Set(await this.collectObjects(haves));
+      const objects = await this.collectObjects([localSha], exclude);
+      const pack = await this.buildPack(objects);
+      const want = ['report-status', 'agent=html-git/1.0'].filter((c) => c.startsWith('agent=') || caps.includes(c));
+      const body = concatBytes([pktLine(`${remoteSha} ${localSha} ${ref}\0${want.join(' ')}`), enc('0000'), pack]);
+      let post;
+      try {
+        post = await doFetch(endpoint + '/git-receive-pack', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/x-git-receive-pack-request', Accept: 'application/x-git-receive-pack-result' },
+          body,
+        });
+      } catch (e) {
+        throw new Error(`upload to ${endpoint} failed (${e.message})`);
+      }
+      if (!post.ok) throw new Error(`remote answered HTTP ${post.status} for git-receive-pack`);
+      const report = parsePktLines(new Uint8Array(await post.arrayBuffer())).filter(Boolean).map((l) => dec(l).replace(/\n$/, ''));
+      if (caps.includes('report-status')) {
+        const unpack = report.find((l) => l.startsWith('unpack '));
+        if (unpack && unpack !== 'unpack ok') throw new Error(`remote failed to unpack: ${unpack.slice(7)}`);
+        const ng = report.find((l) => l.startsWith('ng '));
+        if (ng) throw new Error(`remote rejected: ${ng.slice(3)}`);
+        if (!report.some((l) => l === `ok ${ref}`)) throw new Error(`remote did not confirm the update:\n${report.join('\n') || '(empty response)'}`);
+      }
+      await this.fs.writeFile('.git/' + trackRef, localSha + '\n');
+      return { result: remoteSha === ZERO_SHA ? 'new-branch' : 'updated', from: remoteSha, sha: localSha, objects: objects.length, report };
+    }
+  }
+
+  return {
+    Repo, sha1, sha1Hex, inflate, deflate, adler32, hashObject, parseIndex, serializeIndex, parseTree, serializeTree,
+    parseCommit, merge3, parseIgnore, isIgnored, configGet, configSet, applyDelta, pktLine, parsePktLines,
+    validBranchName, cleanMessage, ZERO_SHA, enc, dec, toHex, fromHex,
+  };
+})();
+if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
+</script>
+
+<script>
+(() => {
+  'use strict';
+  const { Repo, enc } = GitCore;
+  const $ = (id) => document.getElementById(id);
+  const state = { root: null, fs: null, repo: null, kind: 'none', status: null, branches: [], busy: false, tab: 'add' };
+
+  // ---------- File System Access adapter ----------
+  const notFound = (e) => e && (e.name === 'NotFoundError' || e.name === 'TypeMismatchError');
+  class HandleFS {
+    constructor(root) { this.root = root; }
+    split(p) { return p.split('/').filter(Boolean); }
+    async dir(parts, create = false) {
+      let d = this.root;
+      for (const name of parts) d = await d.getDirectoryHandle(name, { create });
+      return d;
+    }
+    async readFile(path) {
+      try {
+        const parts = this.split(path);
+        const name = parts.pop();
+        const fh = await (await this.dir(parts)).getFileHandle(name);
+        return new Uint8Array(await (await fh.getFile()).arrayBuffer());
+      } catch (e) { if (notFound(e)) return null; throw e; }
+    }
+    async writeFile(path, data) {
+      const parts = this.split(path);
+      const name = parts.pop();
+      const fh = await (await this.dir(parts, true)).getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(typeof data === 'string' ? enc(data) : data);
+      await w.close();
+    }
+    async mkdir(path) { await this.dir(this.split(path), true); }
+    async readdir(path) {
+      try {
+        const d = await this.dir(this.split(path));
+        const out = [];
+        for await (const [name, h] of d.entries()) out.push({ name, kind: h.kind });
+        return out;
+      } catch (e) { if (notFound(e)) return null; throw e; }
+    }
+    async stat(path) {
+      const parts = this.split(path);
+      if (!parts.length) return { kind: 'directory' };
+      const name = parts.pop();
+      let d;
+      try { d = await this.dir(parts); } catch (e) { if (notFound(e)) return null; throw e; }
+      try {
+        const f = await (await d.getFileHandle(name)).getFile();
+        return { kind: 'file', size: f.size, mtimeMs: f.lastModified };
+      } catch (e) { if (!notFound(e)) throw e; }
+      try { await d.getDirectoryHandle(name); return { kind: 'directory' }; } catch (e) { if (notFound(e)) return null; throw e; }
+    }
+    async remove(path) {
+      const parts = this.split(path);
+      const name = parts.pop();
+      try { await (await this.dir(parts)).removeEntry(name); } catch (e) { if (notFound(e)) return; throw e; }
+    }
+  }
+
+  // ---------- output ----------
+  function log(text, cls) {
+    $('console').hidden = false;
+    const line = document.createElement('div');
+    if (cls) line.className = 'l-' + cls;
+    line.textContent = text;
+    $('out').appendChild(line);
+    $('out').scrollTop = $('out').scrollHeight;
+  }
+  const short = (sha) => (sha ? sha.slice(0, 7) : '');
+  function el(tag, attrs = {}, ...kids) {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids.flat()) if (k != null) e.append(k instanceof Node ? k : String(k));
+    return e;
+  }
+  function relTime(t) {
+    const s = Math.floor(Date.now() / 1000) - t;
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    return new Date(t * 1000).toLocaleDateString();
+  }
+  const store = {
+    get(k) { try { return localStorage.getItem('html-git:' + k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem('html-git:' + k, v); } catch (e) { /* storage unavailable */ } },
+  };
+
+  // ---------- actions ----------
+  async function run(label, fn) {
+    if (state.busy) return;
+    state.busy = true;
+    document.body.style.cursor = 'progress';
+    for (const b of document.querySelectorAll('button')) b.disabled = true;
+    if (label) log('$ ' + label, 'cmd');
+    try { await fn(); }
+    catch (e) { log(e && e.message ? e.message : String(e), 'err'); console.error(e); }
+    finally {
+      state.busy = false;
+      document.body.style.cursor = '';
+      for (const b of document.querySelectorAll('button')) b.disabled = false;
+      try { await refresh(); } catch (e) { log('refresh failed: ' + e.message, 'err'); }
+    }
+  }
+  const ident = () => ({ name: $('authorName').value.trim(), email: $('authorEmail').value.trim() });
+  const identOrNull = () => { const i = ident(); return i.name && i.email ? i : null; };
+
+  async function openHandle(handle) {
+    state.root = handle;
+    state.fs = new HandleFS(handle);
+    state.repo = new Repo(state.fs);
+    $('folderName').textContent = handle.name + '/';
+    $('welcome').hidden = true;
+    $('app').hidden = false;
+    log(`opened folder ${handle.name}/`);
+    await refresh();
+    if (state.kind !== 'repo') selectTab('init');
+    else if (state.tab === 'init') selectTab('add');
+  }
+  async function pickFolder() {
+    if (!window.showDirectoryPicker) { $('unsupported').hidden = false; return; }
+    let handle;
+    try { handle = await window.showDirectoryPicker({ id: 'html-git', mode: 'readwrite' }); }
+    catch (e) { if (e.name !== 'AbortError') log(e.message, 'err'); return; }
+    try { await openHandle(handle); } catch (e) { log(e.message, 'err'); }
+  }
+
+  // ---------- rendering ----------
+  function selectTab(tab) {
+    state.tab = tab;
+    store.set('tab', tab);
+    for (const b of $('tabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.panel !== tab;
+  }
+  const STATE_TEXT = {
+    '??': 'untracked', UU: 'conflict — resolve, then add',
+  };
+  function describe(e) {
+    if (STATE_TEXT[e.x + e.y]) return STATE_TEXT[e.x + e.y];
+    const parts = [];
+    if (e.x === 'A') parts.push('new file, staged');
+    if (e.x === 'M') parts.push('staged');
+    if (e.x === 'D') parts.push('deletion staged');
+    if (e.y === 'M') parts.push('modified, not staged');
+    if (e.y === 'D') parts.push('deleted, not staged');
+    return parts.join('; ') || 'unchanged';
+  }
+  const xyClass = (e) => (e.x === 'U' ? 'st-conf' : e.x === '?' ? 'st-unt' : (e.y === 'D' || e.x === 'D') ? 'st-del' : (e.x === 'A') ? 'st-add' : 'st-mod');
+
+  async function refresh() {
+    if (!state.repo) return;
+    const repo = state.repo;
+    state.kind = await repo.kind();
+    const isRepo = state.kind === 'repo';
+    for (const b of $('tabs').querySelectorAll('button')) if (b.dataset.tab !== 'init') b.disabled = !isRepo;
+    $('initState').replaceChildren(
+      state.kind === 'repo' ? el('div', { class: 'notice' }, 'This folder is already a git repository. Running init again leaves it untouched.')
+        : state.kind === 'gitfile' ? el('div', { class: 'notice err' }, '.git here is a file (a linked worktree or submodule). html-git cannot follow it; open the main repository folder instead.')
+          : el('div', { class: 'notice' }, 'This folder is not a git repository yet.'));
+    if (!isRepo) {
+      $('repoInfo').replaceChildren(el('dt', {}, 'State'), el('dd', {}, 'not a git repository'));
+      $('history').replaceChildren(el('li', { class: 'empty' }, 'no history'));
+      return;
+    }
+    const st = await repo.status({ all: $('showAll').checked });
+    state.status = st;
+    state.branches = await repo.branches();
+    const head = st.head;
+
+    // sidebar
+    const info = [
+      el('dt', {}, 'Branch'), el('dd', {}, head.branch ? el('b', {}, head.branch) : el('span', { class: 'pill warn' }, 'detached HEAD')),
+      el('dt', {}, 'HEAD'), el('dd', { class: 'mono' }, head.sha ? short(head.sha) : 'no commits yet'),
+    ];
+    const changed = st.entries.filter((e) => e.x !== ' ' || e.y !== ' ');
+    const staged = changed.filter((e) => e.x !== ' ' && e.x !== '?' && e.x !== 'U');
+    info.push(el('dt', {}, 'Changes'), el('dd', {}, `${staged.length} staged, ${changed.length - staged.length} other`));
+    if (st.merging) info.push(el('dt', {}, 'Merging'), el('dd', {}, el('span', { class: 'pill warn' }, 'in progress ' + short(st.merging))));
+    const remote = await repo.getConfig('remote', 'origin', 'url');
+    if (remote) info.push(el('dt', {}, 'origin'), el('dd', { class: 'mono' }, remote));
+    $('repoInfo').replaceChildren(...info);
+
+    const commits = head.sha ? await repo.log(head.sha, 25) : [];
+    $('history').replaceChildren(...(commits.length ? commits.map((c) => el('li', {},
+      el('span', { class: 'msg' }, el('span', { class: 'mono' }, short(c.sha) + ' '), c.message.split('\n')[0], c.parents.length > 1 ? el('span', { class: 'pill' }, ' merge') : null),
+      el('span', { class: 'meta' }, `${c.author.name} · ${relTime(c.author.time)}`))) : [el('li', { class: 'empty' }, 'no commits yet')]));
+
+    // add
+    const rows = st.entries.map((e) => {
+      const cb = el('input', { type: 'checkbox', 'data-path': e.path, checked: e.y !== ' ' || e.x === 'U' });
+      return el('tr', {}, el('td', {}, cb), el('td', { class: 'xy ' + xyClass(e) }, e.x + e.y), el('td', { class: 'path' }, e.path), el('td', {}, describe(e)));
+    });
+    $('fileRows').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colspan: 4, class: 'empty' }, 'nothing to add — working tree clean'))]));
+
+    // commit
+    $('stagedList').replaceChildren(...(staged.length ? staged.map((e) => el('li', {}, el('span', { class: 'xy ' + xyClass(e) }, e.x), el('span', { class: 'name' }, e.path)))
+      : [el('li', { class: 'empty' }, st.merging ? 'no content changes staged (merge commit)' : 'nothing staged — use the add tab')]));
+    const unresolved = st.entries.filter((e) => e.x === 'U').map((e) => e.path);
+    if (st.merging) {
+      $('mergeNotice').replaceChildren(el('div', { class: 'notice warn' }, unresolved.length
+        ? `Merge in progress. Resolve and add these files before committing: ${unresolved.join(', ')}`
+        : 'Merge in progress. All conflicts are resolved; commit to conclude the merge.'));
+      if (!$('commitMsg').value) $('commitMsg').value = (await repo.mergeMessage()) || '';
+    } else $('mergeNotice').replaceChildren();
+    if (!$('authorName').value) $('authorName').value = (await repo.getConfig('user', null, 'name')) || store.get('name') || '';
+    if (!$('authorEmail').value) $('authorEmail').value = (await repo.getConfig('user', null, 'email')) || store.get('email') || '';
+
+    // branch
+    $('branchList').replaceChildren(...(state.branches.length ? state.branches.map((b) => el('li', {},
+      el('span', { class: 'mono' }, b.name === head.branch ? '*' : ' '),
+      el('span', { class: 'name' }, b.name), el('span', { class: 'mono meta' }, short(b.sha)),
+      b.name === head.branch ? el('span', { class: 'pill' }, 'current') : el('button', { class: 'small', onclick: () => switchTo(b.name) }, 'switch')))
+      : [el('li', { class: 'empty' }, head.branch ? `${head.branch} (no commits yet)` : 'no branches')]));
+
+    // merge
+    const others = state.branches.filter((b) => b.name !== head.branch);
+    const prevFrom = $('mergeFrom').value;
+    $('mergeFrom').replaceChildren(...(others.length ? others.map((b) => el('option', { value: b.name }, b.name)) : [el('option', { value: '' }, 'no other branches')]));
+    if (others.some((b) => b.name === prevFrom)) $('mergeFrom').value = prevFrom;
+    $('abortBtn').hidden = !st.merging;
+    $('mergeState').replaceChildren(st.merging
+      ? el('div', { class: 'notice warn' }, el('b', {}, 'Merge in progress. '),
+        unresolved.length ? `Conflicted files: ${unresolved.join(', ')}. Edit them to remove the <<<<<<< ======= >>>>>>> markers, add them, then commit.` : 'All conflicts resolved — commit to finish.')
+      : '');
+
+    // push
+    const prevPush = $('pushBranch').value;
+    $('pushBranch').replaceChildren(...state.branches.map((b) => el('option', { value: b.name }, b.name)));
+    $('pushBranch').value = state.branches.some((b) => b.name === prevPush) ? prevPush : (head.branch || '');
+    if (!$('remoteUrl').value && remote) $('remoteUrl').value = remote;
+  }
+
+  async function switchTo(name) {
+    await run(`git switch ${name}`, async () => {
+      const r = await state.repo.switchBranch(name, { ident: identOrNull() });
+      log(r.already ? `Already on '${name}'` : `Switched to branch '${name}'`, 'ok');
+    });
+  }
+
+  // ---------- wiring ----------
+  $('openBtn').onclick = pickFolder;
+  $('openBtn2').onclick = pickFolder;
+  for (const b of $('tabs').querySelectorAll('button')) b.onclick = () => selectTab(b.dataset.tab);
+  $('refreshBtn').onclick = () => run(null, async () => {});
+  $('showAll').onchange = () => run(null, async () => {});
+  $('selAll').onclick = () => { for (const c of $('fileRows').querySelectorAll('input[type=checkbox]')) c.checked = true; };
+  $('selNone').onclick = () => { for (const c of $('fileRows').querySelectorAll('input[type=checkbox]')) c.checked = false; };
+
+  $('initBtn').onclick = () => {
+    const branch = $('initBranch').value.trim() || 'main';
+    run(`git init -b ${branch}`, async () => {
+      const r = await state.repo.init(branch);
+      log(r.reinitialized ? 'Reinitialized existing Git repository (nothing changed)' : `Initialized empty Git repository in ${state.root.name}/.git/`, 'ok');
+      selectTab('add');
+    });
+  };
+  $('addBtn').onclick = () => {
+    const paths = [...$('fileRows').querySelectorAll('input[type=checkbox]:checked')].map((c) => c.dataset.path);
+    if (!paths.length) { log('select at least one file to add', 'err'); return; }
+    run(`git add ${paths.map((p) => (/\s/.test(p) ? JSON.stringify(p) : p)).join(' ')}`, async () => {
+      const done = await state.repo.add(paths);
+      for (const d of done) log(`${d.action === 'add' ? 'staged' : 'staged removal of'} ${d.path}`);
+    });
+  };
+  $('commitBtn').onclick = () => {
+    const message = $('commitMsg').value;
+    const who = ident();
+    run(`git commit -m ${JSON.stringify(message.split('\n')[0])}`, async () => {
+      store.set('name', who.name); store.set('email', who.email);
+      const r = await state.repo.commit({ message, ident: who });
+      log(`[${r.branch || 'detached HEAD'}${r.parents.length ? '' : ' (root-commit)'} ${r.sha.slice(0, 7)}] ${message.trim().split('\n')[0]}`, 'ok');
+      $('commitMsg').value = '';
+    });
+  };
+  $('createBranchBtn').onclick = () => {
+    const name = $('newBranch').value.trim();
+    const andSwitch = $('switchNew').checked;
+    run(andSwitch ? `git switch -c ${name}` : `git branch ${name}`, async () => {
+      await state.repo.createBranch(name, { ident: identOrNull(), switchTo: andSwitch });
+      log(andSwitch ? `Switched to a new branch '${name}'` : `Created branch '${name}'`, 'ok');
+      $('newBranch').value = '';
+    });
+  };
+  $('mergeBtn').onclick = () => {
+    const name = $('mergeFrom').value;
+    if (!name) { log('there is no other branch to merge', 'err'); return; }
+    const who = ident();
+    run(`git merge ${name}`, async () => {
+      const r = await state.repo.merge(name, { ident: who });
+      if (r.result === 'up-to-date') log('Already up to date.', 'ok');
+      else if (r.result === 'fast-forward') log(`Updating ${short(r.from)}..${short(r.sha)}\nFast-forward`, 'ok');
+      else if (r.result === 'merged') log(`Merge made by the 'ort' strategy. [${short(r.sha)}]`, 'ok');
+      else {
+        for (const c of r.conflicts) log(`CONFLICT (${c.reason}): ${c.path}`, 'err');
+        log('Automatic merge failed; fix conflicts, add the files, then commit the result.', 'err');
+        selectTab('add');
+      }
+    });
+  };
+  $('abortBtn').onclick = () => run('git merge --abort', async () => { await state.repo.abortMerge(); log('Merge aborted.', 'ok'); });
+  $('pushBtn').onclick = () => {
+    const url = $('remoteUrl').value.trim();
+    const branch = $('pushBranch').value;
+    const corsProxy = $('corsProxy').value.trim();
+    store.set('corsProxy', corsProxy);
+    run(`git push origin ${branch}`, async () => {
+      const r = await state.repo.push({ url, branch, username: $('pushUser').value.trim(), token: $('pushToken').value, corsProxy });
+      if ((await state.repo.getConfig('remote', 'origin', 'url')) !== url) {
+        await state.repo.setConfig('remote', 'origin', 'url', url);
+        await state.repo.setConfig('remote', 'origin', 'fetch', '+refs/heads/*:refs/remotes/origin/*');
+      }
+      if (r.result === 'up-to-date') log('Everything up-to-date', 'ok');
+      else log(`To ${url}\n   ${r.result === 'new-branch' ? '* [new branch]     ' : short(r.from) + '..' + short(r.sha) + '  '} ${branch} -> ${branch}  (${r.objects} objects)`, 'ok');
+    });
+  };
+
+  $('corsProxy').value = store.get('corsProxy') || '';
+  if (!window.showDirectoryPicker) $('unsupported').hidden = false;
+  selectTab(store.get('tab') || 'add');
+  window.htmlGit = { GitCore, openHandle, HandleFS };
+})();
+</script>
+</body>
+</html>
