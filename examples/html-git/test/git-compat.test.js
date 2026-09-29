@@ -266,8 +266,14 @@ test('works on repositories created and packed by real git', async () => {
   fsck(dir);
   git(dir, 'gc', '-q');
   fsck(dir);
-  st = await new G.Repo(new NodeFS(dir)).status();
+  const fresh = new G.Repo(new NodeFS(dir));
+  st = await fresh.status();
   assert.deepEqual(st.entries, []);
+  // Abbreviated ids and ~ / ^ are resolved from packed objects too.
+  const headSha = git(dir, 'rev-parse', 'HEAD').trim();
+  assert.equal(await fresh.resolveRev(headSha.slice(0, 8)), headSha);
+  assert.equal(await fresh.resolveRev(headSha.slice(0, 8) + '^2'), git(dir, 'rev-parse', 'HEAD^2').trim());
+  assert.equal((await fresh.graph()).total, Number(git(dir, 'rev-list', '--all', '--count').trim()));
 });
 
 // Minimal CGI bridge so `git http-backend` serves a bare repository over smart HTTP.
@@ -361,4 +367,364 @@ test('push over smart HTTP to a bare repository served by git http-backend', asy
   } finally {
     server.close();
   }
+});
+
+test('log, rev syntax and the commit graph agree with real git', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  const commitFile = async (p, s, msg) => { write(p, s); await repo.add([p]); return (await repo.commit({ message: msg, ident: ME, date: tick() })).sha; };
+  const a = await commitFile('a.txt', 'a\n', 'A');
+  const b = await commitFile('a.txt', 'a\nb\n', 'B');
+  await repo.createBranch('side', { ident: ME, switchTo: true });
+  await commitFile('s.txt', 's\n', 'S1');
+  await commitFile('s.txt', 's\ns\n', 'S2');
+  await repo.switchBranch('main', { ident: ME });
+  await commitFile('m.txt', 'm\n', 'M1');
+  await repo.merge('side', { ident: ME, date: tick() });
+  await commitFile('m.txt', 'm\nm\n', 'M2');
+  git(dir, 'tag', '-a', 'v1', '-m', 'release', b);
+  git(dir, 'branch', 'old', a);
+
+  for (const rev of ['HEAD', 'HEAD~1', 'HEAD~2', 'HEAD^1^2', 'HEAD~1^2~1', 'main~3', 'v1', 'v1~1', b.slice(0, 7), 'side^']) {
+    assert.equal(await repo.resolveRev(rev), git(dir, 'rev-parse', rev + '^{commit}').trim(), rev);
+  }
+  assert.equal(await repo.resolveRev('HEAD~20'), null);
+  assert.equal(await repo.resolveRev('HEAD^2'), null);
+
+  const log = await repo.log((await repo.head()).sha, 100);
+  assert.deepEqual(log.map((c) => c.sha), git(dir, 'rev-list', '--date-order', 'HEAD').trim().split('\n'));
+
+  const { rows, total } = await repo.graph();
+  const all = git(dir, 'rev-list', '--all').trim().split('\n');
+  assert.equal(total, all.length);
+  assert.deepEqual(rows.map((r) => r.sha).sort(), [...all].sort());
+  const pos = new Map(rows.map((r, i) => [r.sha, i]));
+  for (const r of rows) for (const p of r.parents) assert.ok(pos.get(p) > pos.get(r.sha), 'parents come after children');
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    assert.deepEqual(r.before, i ? rows[i - 1].after : [], 'lanes continue from row to row');
+    assert.ok(r.before[r.col] === r.sha || r.before[r.col] == null || r.col >= r.before.length);
+    for (const p of r.parents) assert.ok(r.after.includes(p), 'every parent has a lane below its child');
+  }
+  assert.deepEqual(rows.at(-1).after, []);
+  assert.deepEqual(rows[0].refs, ['HEAD -> main']);
+  assert.ok(rows.find((r) => r.sha === b).refs.includes('tag: v1'));
+  assert.ok(rows.find((r) => r.sha === a).refs.includes('old'));
+  assert.ok(Math.max(...rows.map((r) => r.after.length)) >= 2, 'the merge shows two lanes');
+});
+
+test('reset --soft, --mixed, --hard and unstaging match real git', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('a.txt', 'one\n');
+  write('b.txt', 'bee\n');
+  await repo.add(['a.txt', 'b.txt']);
+  const c1 = await repo.commit({ message: 'one', ident: ME, date: tick() });
+  write('a.txt', 'two\n');
+  write('c.txt', 'new\n');
+  await repo.add(['a.txt', 'c.txt']);
+  const c2 = await repo.commit({ message: 'two', ident: ME, date: tick() });
+
+  let r = await repo.reset('HEAD~1', { mode: 'soft', ident: ME });
+  assert.equal(r.sha, c1.sha);
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), c1.sha);
+  assert.equal(git(dir, 'rev-parse', 'ORIG_HEAD').trim(), c2.sha);
+  assert.equal(git(dir, 'status', '--porcelain'), 'M  a.txt\nA  c.txt\n');
+  assert.match(git(dir, 'reflog', '-1'), /reset: moving to HEAD~1/);
+
+  await repo.reset(c2.sha, { mode: 'soft', ident: ME });
+  await repo.reset('HEAD~1', { mode: 'mixed', ident: ME });
+  assert.equal(git(dir, 'status', '--porcelain'), ' M a.txt\n?? c.txt\n');
+  assert.deepEqual((await repo.status()).entries.map((e) => e.x + e.y + ' ' + e.path), [' M a.txt', '?? c.txt']);
+
+  await repo.add(['a.txt', 'c.txt']);
+  write('b.txt', 'bee edited\n');
+  await repo.add(['b.txt']);
+  const done = await repo.resetPaths(['a.txt', 'c.txt']);
+  assert.deepEqual(done.map((d) => d.action), ['reset', 'untrack']);
+  assert.equal(git(dir, 'status', '--porcelain'), ' M a.txt\nM  b.txt\n?? c.txt\n');
+
+  write('d.txt', 'untracked survives\n');
+  await repo.reset(c2.sha, { mode: 'hard', ident: ME });
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), c2.sha);
+  assert.equal(git(dir, 'status', '--porcelain'), '?? d.txt\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'two\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'b.txt'), 'utf8'), 'bee\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'c.txt'), 'utf8'), 'new\n');
+
+  await repo.reset('HEAD~1', { mode: 'hard', ident: ME });
+  assert.equal(fs.existsSync(path.join(dir, 'c.txt')), false, 'hard reset removes files the target does not track');
+  assert.equal(git(dir, 'status', '--porcelain'), '?? d.txt\n');
+
+  // A hard reset also clears a conflicted merge.
+  await repo.createBranch('x', { ident: ME, switchTo: true });
+  write('a.txt', 'x\n'); await repo.add(['a.txt']); await repo.commit({ message: 'x', ident: ME, date: tick() });
+  await repo.switchBranch('main', { ident: ME });
+  write('a.txt', 'y\n'); await repo.add(['a.txt']); const y = await repo.commit({ message: 'y', ident: ME, date: tick() });
+  assert.equal((await repo.merge('x', { ident: ME, date: tick() })).result, 'conflict');
+  await assert.rejects(repo.reset('HEAD', { mode: 'soft' }), /middle of a merge/);
+  await repo.reset('HEAD', { mode: 'hard', ident: ME });
+  assert.equal(git(dir, 'status', '--porcelain'), '?? d.txt\n');
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), y.sha);
+  assert.equal(fs.existsSync(path.join(dir, '.git/MERGE_HEAD')), false);
+  fsck(dir);
+});
+
+test('rebase: clean replay, conflicts with continue/skip/abort, and state real git understands', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  const commitFile = async (p, s, msg) => { write(p, s); await repo.add([p]); return (await repo.commit({ message: msg, ident: ME, date: tick() })).sha; };
+  await commitFile('f.txt', '1\n2\n3\n4\n5\n', 'base');
+  await repo.createBranch('topic', { ident: ME, switchTo: true });
+  const t1 = await commitFile('f.txt', '1\n2\n3\n4\nfive\n', 'topic edits line 5');
+  await commitFile('t.txt', 'topic\n', 'topic adds t.txt');
+  await repo.switchBranch('main', { ident: ME });
+  const m1 = await commitFile('f.txt', 'one\n2\n3\n4\n5\n', 'main edits line 1');
+  await commitFile('same.txt', 'x\n', 'main adds same.txt');
+
+  // Up to date / fast-forward.
+  assert.equal((await repo.rebase('main~1', { ident: ME, date: tick() })).result, 'up-to-date');
+  git(dir, 'branch', 'behind', 'main~2');
+  await repo.switchBranch('behind', { ident: ME });
+  let r = await repo.rebase('main', { ident: ME, date: tick() });
+  assert.equal(r.result, 'fast-forward');
+  assert.equal(git(dir, 'rev-parse', 'behind').trim(), git(dir, 'rev-parse', 'main').trim());
+
+  // Clean rebase of topic onto main; authors are kept, committer is the rebaser.
+  await repo.switchBranch('topic', { ident: ME });
+  const origTopic = git(dir, 'rev-parse', 'topic').trim();
+  r = await repo.rebase('main', { ident: { name: 'Rebaser', email: 'r@example.com' }, date: tick() });
+  assert.equal(r.result, 'rebased');
+  assert.equal(r.picked.length, 2);
+  assert.equal(git(dir, 'symbolic-ref', 'HEAD').trim(), 'refs/heads/topic');
+  assert.equal(git(dir, 'rev-list', '--count', 'main..topic').trim(), '2');
+  assert.equal(git(dir, 'merge-base', 'main', 'topic').trim(), git(dir, 'rev-parse', 'main').trim());
+  assert.equal(git(dir, 'log', '--format=%s|%an|%cn', 'main..topic'), 'topic adds t.txt|Ada Lovelace|Rebaser\ntopic edits line 5|Ada Lovelace|Rebaser\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'f.txt'), 'utf8'), 'one\n2\n3\n4\nfive\n');
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+  assert.equal(git(dir, 'rev-parse', 'ORIG_HEAD').trim(), origTopic);
+  assert.match(git(dir, 'reflog', '-1', 'topic'), /rebase \(finish\): refs\/heads\/topic onto/);
+  assert.equal(fs.existsSync(path.join(dir, '.git/rebase-merge')), false);
+  fsck(dir);
+
+  // A commit whose change is already upstream is dropped.
+  await repo.reset(origTopic, { mode: 'hard' });
+  await repo.switchBranch('main', { ident: ME });
+  write('f.txt', 'one\n2\n3\n4\nfive\n'); await repo.add(['f.txt']);
+  await repo.commit({ message: 'main cherry-picks line 5', ident: ME, date: tick() });
+  await repo.switchBranch('topic', { ident: ME });
+  r = await repo.rebase('main', { ident: ME, date: tick() });
+  assert.equal(r.result, 'rebased');
+  assert.deepEqual(r.dropped, [t1]);
+  assert.equal(git(dir, 'rev-list', '--count', 'main..topic').trim(), '1');
+
+  // Conflicts: stop, leave state git understands, resolve, continue.
+  await repo.reset(origTopic, { mode: 'hard' });
+  await repo.switchBranch('main', { ident: ME });
+  await repo.reset(m1, { mode: 'hard' });
+  await commitFile('f.txt', 'one\n2\n3\n4\nFIVE\n', 'main edits line 5');
+  const mainTip = git(dir, 'rev-parse', 'main').trim();
+  await repo.switchBranch('topic', { ident: ME });
+  r = await repo.rebase('main', { ident: ME, date: tick() });
+  assert.equal(r.result, 'conflict');
+  assert.equal(r.stopped, t1);
+  assert.deepEqual(r.conflicts, [{ path: 'f.txt', reason: 'content' }]);
+  assert.equal(fs.readFileSync(path.join(dir, 'f.txt'), 'utf8'), `one\n2\n3\n4\n<<<<<<< HEAD\nFIVE\n=======\nfive\n>>>>>>> ${t1.slice(0, 7)} (topic edits line 5)\n`);
+  assert.equal(git(dir, 'status', '--porcelain'), 'UU f.txt\n');
+  assert.match(git(dir, 'status'), /rebasing branch 'topic' on '[0-9a-f]{7}'/);
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), mainTip);
+  assert.equal(git(dir, 'rev-parse', 'REBASE_HEAD').trim(), t1);
+  assert.equal((await repo.status()).rebasing.stopped, t1);
+  await assert.rejects(repo.merge('main', { ident: ME }), /rebase is in progress/);
+  await assert.rejects(repo.continueRebase({ ident: ME }), /unmerged/);
+  write('f.txt', 'one\n2\n3\n4\nFIVE and five\n');
+  await repo.add(['f.txt']);
+  r = await repo.continueRebase({ ident: ME, date: tick() });
+  assert.equal(r.result, 'rebased');
+  assert.equal(git(dir, 'log', '--format=%s', 'main..topic'), 'topic adds t.txt\ntopic edits line 5\n');
+  assert.equal(git(dir, 'show', 'topic~1:f.txt'), 'one\n2\n3\n4\nFIVE and five\n');
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+  assert.equal(git(dir, 'symbolic-ref', '--short', 'HEAD').trim(), 'topic');
+  fsck(dir);
+
+  // Skip drops the conflicting commit and carries on.
+  await repo.reset(origTopic, { mode: 'hard' });
+  assert.equal((await repo.rebase('main', { ident: ME, date: tick() })).result, 'conflict');
+  r = await repo.skipRebase({ ident: ME, date: tick() });
+  assert.equal(r.result, 'rebased');
+  assert.equal(git(dir, 'log', '--format=%s', 'main..topic'), 'topic adds t.txt\n');
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+
+  // Abort puts everything back.
+  await repo.reset(origTopic, { mode: 'hard' });
+  assert.equal((await repo.rebase('main', { ident: ME, date: tick() })).result, 'conflict');
+  await repo.abortRebase({ ident: ME });
+  assert.equal(git(dir, 'symbolic-ref', 'HEAD').trim(), 'refs/heads/topic');
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), origTopic);
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+  assert.equal(fs.existsSync(path.join(dir, '.git/rebase-merge')), false);
+
+  // Real git can abort and continue a rebase html-git stopped.
+  assert.equal((await repo.rebase('main', { ident: ME, date: tick() })).result, 'conflict');
+  git(dir, 'rebase', '--abort');
+  assert.equal(git(dir, 'rev-parse', 'HEAD').trim(), origTopic);
+  assert.equal(git(dir, 'status', '--porcelain'), '');
+  assert.equal((await repo.rebase('main', { ident: ME, date: tick() })).result, 'conflict');
+  write('f.txt', 'resolved by git\n');
+  git(dir, 'add', 'f.txt');
+  execFileSync('git', ['rebase', '--continue'], { cwd: dir, env: { ...gitEnv, GIT_EDITOR: 'true' }, stdio: 'ignore' });
+  assert.equal(git(dir, 'log', '--format=%s|%an', 'main..topic'), 'topic adds t.txt|Ada Lovelace\ntopic edits line 5|Ada Lovelace\n');
+  assert.equal(git(dir, 'symbolic-ref', '--short', 'HEAD').trim(), 'topic');
+  fsck(dir);
+});
+
+test('diff output matches git diff, and patches apply with git apply', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  const body = (n, tag = '') => Array.from({ length: n }, (_, i) => `  line ${i + 1}${tag}`).join('\n') + '\n';
+  write('code.js', 'function alpha() {\n' + body(20) + '}\n\nfunction beta() {\n' + body(20, ' b') + '}\n');
+  write('gone.txt', 'bye\n');
+  write('nonl.txt', 'no newline');
+  write('bin.dat', Buffer.from([0, 1, 2, 3]));
+  write('same.txt', 'same\n');
+  await repo.add(['code.js', 'gone.txt', 'nonl.txt', 'bin.dat', 'same.txt']);
+  const c1 = await repo.commit({ message: 'one', ident: ME, date: tick() });
+
+  const lines = fs.readFileSync(path.join(dir, 'code.js'), 'utf8').split('\n');
+  lines[10] = '  line 10 changed';
+  lines[16] = '  line 16 changed';
+  lines.splice(35, 1);
+  lines.splice(40, 0, '  inserted in beta');
+  write('code.js', lines.join('\n'));
+  write('nonl.txt', 'no newline\n');
+  write('bin.dat', Buffer.from([0, 9, 9]));
+  fs.rmSync(path.join(dir, 'gone.txt'));
+  write('staged-new.txt', 'brand\nnew\n');
+  await repo.add(['staged-new.txt', 'gone.txt']);
+  write('staged-new.txt', 'brand\nnewer\n');
+  write('empty.txt', '');
+  await repo.add(['empty.txt']);
+
+  const same = async (opts, ...args) => assert.equal((await repo.diff(opts)).text, git(dir, 'diff', ...args), `git diff ${args.join(' ')}`);
+  await same({}, );
+  await same({ from: 'HEAD', to: 'index' }, '--cached');
+  await same({ from: 'HEAD', to: 'worktree' }, 'HEAD');
+  assert.match((await repo.diff()).text, /@@ -8,13 \+8,13 @@ function alpha\(\) \{\n/);
+  assert.deepEqual((await repo.diff({ from: 'HEAD', to: 'worktree' })).files.map((f) => f.status + ' ' + f.path),
+    ['M bin.dat', 'M code.js', 'A empty.txt', 'D gone.txt', 'M nonl.txt', 'A staged-new.txt']);
+
+  await repo.add(['code.js', 'nonl.txt', 'bin.dat', 'staged-new.txt']);
+  const c2 = await repo.commit({ message: 'two', ident: ME, date: tick() });
+  await same({ from: c1.sha, to: c2.sha }, c1.sha, c2.sha);
+  await same({ from: 'HEAD~1', to: 'HEAD' }, 'HEAD~1', 'HEAD');
+  assert.equal((await repo.diff()).text, '');
+
+  // Random edits: our patch must apply cleanly with git apply and reproduce the file.
+  let seed = 7;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const words = ['a', 'b', 'c', '}', '', 'return x;', 'if (y) {'];
+  let text = Array.from({ length: 300 }, () => words[rnd(words.length)]).join('\n') + '\n';
+  write('rand.txt', text);
+  await repo.add(['rand.txt']);
+  await repo.commit({ message: 'rand', ident: ME, date: tick() });
+  for (let round = 0; round < 5; round++) {
+    const ls = text.split('\n');
+    for (let k = 0; k < 25; k++) {
+      const at = rnd(ls.length), op = rnd(3);
+      if (op === 0) ls.splice(at, 1); else if (op === 1) ls.splice(at, 0, words[rnd(words.length)]); else ls[at] = words[rnd(words.length)];
+    }
+    text = ls.join('\n');
+    write('rand.txt', text);
+    const patch = path.join(tmpRoot, `r${n}-${round}.patch`);
+    fs.writeFileSync(patch, (await repo.diff()).text);
+    git(dir, 'apply', '--cached', '--check', patch);
+    git(dir, 'apply', '--cached', patch);
+    assert.equal(git(dir, 'diff'), '', 'index now matches the working tree');
+    assert.equal((await repo.diff()).text, '');
+  }
+});
+
+test('stash push, list, apply, pop and drop are compatible with git stash', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('f.txt', 'a\nb\n'); write('del.txt', 'd\n'); write('keep.txt', 'k\n');
+  await repo.add(['f.txt', 'del.txt', 'keep.txt']);
+  const c1 = await repo.commit({ message: 'init', ident: ME, date: tick() });
+
+  assert.equal((await repo.stashPush({ ident: ME })).result, 'no-changes');
+  write('f.txt', 'a\nb\nc\n');
+  fs.rmSync(path.join(dir, 'del.txt'));
+  write('new.txt', 'n\n');
+  await repo.add(['new.txt']);
+  write('untracked.txt', 'u\n');
+  let r = await repo.stashPush({ ident: ME, date: tick() });
+  assert.equal(r.result, 'saved');
+  assert.equal(r.message, `WIP on main: ${c1.sha.slice(0, 7)} init`);
+  assert.equal(git(dir, 'status', '--porcelain'), '?? untracked.txt\n', 'tracked changes are put away, untracked files stay');
+  assert.equal(git(dir, 'stash', 'list'), `stash@{0}: WIP on main: ${c1.sha.slice(0, 7)} init\n`);
+  assert.equal(git(dir, 'rev-parse', 'stash^1').trim(), c1.sha);
+  assert.equal(git(dir, 'log', '-1', '--format=%s', 'stash^2').trim(), `index on main: ${c1.sha.slice(0, 7)} init`);
+  assert.equal(git(dir, 'show', 'stash:f.txt'), 'a\nb\nc\n');
+  assert.equal(git(dir, 'show', 'stash^2:new.txt'), 'n\n');
+  assert.match(git(dir, 'stash', 'show', '--name-status'), /M\tf\.txt/);
+  fsck(dir);
+
+  // Real git applies our stash; we apply git's stash.
+  git(dir, 'stash', 'apply');
+  assert.equal(git(dir, 'status', '--porcelain'), ' D del.txt\n M f.txt\nA  new.txt\n?? untracked.txt\n');
+  git(dir, 'stash', 'push', '-q', '-m', 'from real git');
+  let list = await repo.stashList();
+  assert.deepEqual(list.map((e) => `${e.index}: ${e.message}`), ['0: On main: from real git', `1: WIP on main: ${c1.sha.slice(0, 7)} init`]);
+  assert.equal(await repo.resolveRev('stash@{1}'), git(dir, 'rev-parse', 'stash@{1}').trim());
+  r = await repo.stashApply(0, { pop: true });
+  assert.equal(r.result, 'applied');
+  assert.equal(git(dir, 'status', '--porcelain'), ' D del.txt\n M f.txt\nA  new.txt\n?? untracked.txt\n');
+  assert.equal(git(dir, 'stash', 'list'), `stash@{0}: WIP on main: ${c1.sha.slice(0, 7)} init\n`);
+
+  // Stash with a message, then drop the older entry; git still reads the list.
+  r = await repo.stashPush({ message: 'second', ident: ME, date: tick() });
+  assert.equal(r.message, 'On main: second');
+  assert.equal(git(dir, 'stash', 'list'), `stash@{0}: On main: second\nstash@{1}: WIP on main: ${c1.sha.slice(0, 7)} init\n`);
+  const second = git(dir, 'rev-parse', 'stash@{0}').trim();
+  await repo.stashDrop(1);
+  assert.equal(git(dir, 'stash', 'list'), 'stash@{0}: On main: second\n');
+  assert.equal(git(dir, 'rev-parse', 'refs/stash').trim(), second);
+  git(dir, 'stash', 'drop', '-q');
+  assert.deepEqual(await repo.stashList(), []);
+
+  // Conflicting apply: markers like git's, the stash is kept.
+  write('f.txt', 'a\nSTASHED\n');
+  await repo.stashPush({ ident: ME, date: tick() });
+  write('f.txt', 'a\nCOMMITTED\n');
+  await repo.add(['f.txt']);
+  await repo.commit({ message: 'change f', ident: ME, date: tick() });
+  r = await repo.stashApply(0, { pop: true });
+  assert.equal(r.result, 'conflict');
+  assert.equal(fs.readFileSync(path.join(dir, 'f.txt'), 'utf8'), 'a\n<<<<<<< Updated upstream\nCOMMITTED\n=======\nSTASHED\n>>>>>>> Stashed changes\n');
+  assert.equal(git(dir, 'status', '--porcelain'), 'UU f.txt\n?? untracked.txt\n');
+  assert.equal((await repo.stashList()).length, 1, 'kept after a conflict');
+  await repo.reset('HEAD', { mode: 'hard' });
+  await repo.stashDrop(0);
+  assert.equal(fs.existsSync(path.join(dir, '.git/refs/stash')), false);
+  fsck(dir);
+});
+
+test('stash apply works next to unrelated local changes, like git', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('a.txt', 'a\n'); write('b.txt', 'b\n');
+  await repo.add(['a.txt', 'b.txt']);
+  await repo.commit({ message: 'init', ident: ME, date: tick() });
+  write('a.txt', 'a stashed\n');
+  await repo.stashPush({ ident: ME, date: tick() });
+  write('b.txt', 'b local\n');
+  await repo.add(['b.txt']);
+  write('b.txt', 'b local, edited again\n');
+  const r = await repo.stashApply(0);
+  assert.equal(r.result, 'applied');
+  assert.equal(git(dir, 'status', '--porcelain'), ' M a.txt\nMM b.txt\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'b.txt'), 'utf8'), 'b local, edited again\n');
+  git(dir, 'checkout', '--', 'a.txt');
+  write('a.txt', 'a local\n');
+  await assert.rejects(repo.stashApply(0), /would be overwritten:\n {2}a\.txt/);
 });

@@ -13,12 +13,18 @@ ordinary command-line git.
 | **init**   | Creates `.git` (`HEAD`, `config`, `objects/`, `refs/`) with a chosen initial branch name. |
 | **add**    | Lists changed and untracked files (respecting `.gitignore` and `.git/info/exclude`) with checkboxes; stages the selected ones. Selecting a deleted file stages its removal. |
 | **commit** | `commit -m` with author name and email inputs. The name and email are prefilled from the repository's `user.name` and `user.email`, then remembered in the browser. Concludes a merge when `MERGE_HEAD` is present. |
+| **diff**   | Shows a colored unified diff: unstaged changes (`git diff`), staged changes (`git diff --cached`), everything since `HEAD` (`git diff HEAD`), or any two commits (`git diff A B`). The output is in git's format: 3 lines of context, function-name hunk headers, new, deleted and binary files, mode changes and `\ No newline at end of file`. The log and stash tabs can open a commit's or a stash's changes here. |
+| **stash**  | Saves uncommitted changes to tracked files and resets them to `HEAD`, like `git stash` or `git stash push -m`. Untracked files are left alone. Lists stashes with **show**, **apply**, **pop** and **drop**. Stashes are stored the way git stores them (`refs/stash` and its reflog, with WIP and index commits), so html-git and command-line git see the same list. Like git, applying brings new files back staged and other changes back unstaged. It works next to local changes as long as the stash doesn't touch those files. On a conflict it writes `Updated upstream` / `Stashed changes` markers and keeps the stash. |
+| **log**    | Shows the history of `HEAD`, another branch, or all branches, newest first: id, branch and tag labels, author, date, parents and the full message. Each commit has a button that fills it in as the **reset** target. |
+| **tree**   | Draws the commit graph of every branch, remote-tracking branch and tag, like `git log --graph --all --oneline`, with one colored lane per line of history. |
 | **branch** | Lists branches, creates a branch at `HEAD` (optionally switching to it), and switches between branches. Switching updates the working tree and index, and it refuses to run with uncommitted changes to tracked files. |
 | **merge**  | Fast-forwards when possible. Otherwise it does a three-way merge: file by file, then line by line (diff3). If there are conflicts it stops and leaves standard git state: conflict markers in the files, index stages 1, 2 and 3, and `MERGE_HEAD` and `MERGE_MSG`. Resolve the files, stage them with **add**, then **commit**, or click **merge --abort**. |
+| **rebase** | Replays the current branch's commits on top of another branch, like `git rebase <branch>`. It keeps each commit's author, flattens merge commits, and drops commits whose changes are already upstream. When the target is ahead it fast-forwards. On a conflict it stops with the same state real git uses (`.git/rebase-merge`, `REBASE_HEAD`, detached `HEAD`, conflict markers, index stages). Resolve the files, stage them with **add**, then click **rebase --continue**, **--skip** or **--abort**. Command-line `git rebase --continue` or `--abort` also works on that state. |
+| **reset**  | Moves the current branch to another commit, like `git reset --soft`, `--mixed` or `--hard`. It saves the old position as `ORIG_HEAD`, and `--mixed` and `--hard` also clear an unfinished merge. It also unstages selected files (`git reset -- <file>`). The target can be a branch, tag, full or abbreviated commit id, and can use `~N` and `^N` (for example `HEAD~2` or `main^2`). |
 | **push**   | Pushes a branch to an HTTPS remote over the git smart HTTP protocol (`git-receive-pack`) with a token. html-git builds the packfile itself. Only fast-forward pushes are allowed. After a successful push it saves the URL as `origin` and updates `refs/remotes/origin/<branch>`. |
 
-Nothing else is implemented on purpose: no clone, fetch, pull, rebase, tags,
-stash or diff viewer.
+Nothing else is implemented on purpose: no clone, fetch, pull, interactive
+rebase or creating tags.
 
 ## How to open it
 
@@ -71,11 +77,18 @@ that real git has packed and garbage-collected.
 
 The automated test (`npm test`, or `node --test test/`, needs Node 18+ and git)
 loads the engine directly from `index.html` and runs it against real
-directories. After init, add, commit, branch, merge (fast-forward, clean
-three-way, conflict then resolve, and abort) and push, it checks the result with
+directories. It covers init, add, commit, diff, stash, branch, merge
+(fast-forward, clean three-way, conflict then resolve, and abort), reset (soft,
+mixed, hard and unstaging), rebase (clean, dropped duplicates, conflict then
+continue, skip and abort, plus real git continuing or aborting a rebase
+html-git stopped), log, the commit graph and push, and checks every result with
 real git: `git fsck --full --strict`, `git status --porcelain`,
-`git log --all --graph`, `git cat-file`, `git write-tree`, `git ls-files`,
-`git merge-base` and `git rev-parse`. For push, it serves a bare repository
+`git log --all --graph`, `git rev-list`, `git cat-file`, `git write-tree`,
+`git ls-files`, `git merge-base`, `git reflog` and `git rev-parse`. Diff output
+must match `git diff`, `git diff --cached`, `git diff HEAD` and `git diff A B`
+byte for byte, and patches for random edits must apply with `git apply`.
+Stashes must work in both directions: git applies html-git's stashes and
+html-git applies git's. For push, it serves a bare repository
 through `git http-backend` over HTTP with `receive.fsckObjects` turned on.
 
 ## Limits
@@ -89,8 +102,20 @@ through `git http-backend` over HTTP with `receive.fsckObjects` turned on.
 - **Merging** uses a single merge base: for criss-cross histories it picks the
   most recent one. If one side has a file where the other side has a directory,
   the merge is refused. Binary files and modify/delete cases are reported as
-  conflicts. Merging and switching need a clean working tree (untracked files are
-  fine).
+  conflicts. Merging, rebasing and switching need a clean working tree
+  (untracked files are fine).
+- **Rebase** is non-interactive only (no `-i`, `--onto` or `--autosquash`). It
+  only drops a commit when the replayed change turns out empty; it doesn't
+  compare patch ids up front like real git. A rebase that real git started with
+  instructions other than `pick` can only be aborted in html-git.
+- **Diff** uses a longest-common-subsequence line diff. When a change could be
+  shown in more than one equally short way (for example, inserting a line that
+  repeats its neighbor), the hunks can differ from git's, but they are still
+  correct patches. Paths aren't quoted the way `core.quotePath` does it, and
+  merge conflicts show as `* Unmerged path` instead of a combined diff.
+- **Stash** has no `--include-untracked`, `--keep-index` or `--index`, and a
+  stash with conflicts must be resolved by hand (add the files, then drop the
+  stash).
 - **Push** only fast-forwards. html-git can't fetch, so if the remote has commits
   you don't have locally, the push is rejected.
 - **Unsupported repository layouts:** index version 4, split index, linked
