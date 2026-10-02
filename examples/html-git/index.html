@@ -2307,6 +2307,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
   class HandleFS {
     constructor(root) { this.root = root; }
     split(p) { return p.split('/').filter(Boolean); }
+    // A path as its parent directory's parts and its own name.
+    parentAndName(p) { const parts = this.split(p); const name = parts.pop(); return [parts, name]; }
     async dir(parts, create = false) {
       let d = this.root;
       for (const name of parts) d = await d.getDirectoryHandle(name, { create });
@@ -2314,15 +2316,13 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     }
     async readFile(path) {
       try {
-        const parts = this.split(path);
-        const name = parts.pop();
+        const [parts, name] = this.parentAndName(path);
         const fh = await (await this.dir(parts)).getFileHandle(name);
         return new Uint8Array(await (await fh.getFile()).arrayBuffer());
       } catch (e) { if (notFound(e)) return null; throw e; }
     }
     async writeFile(path, data) {
-      const parts = this.split(path);
-      const name = parts.pop();
+      const [parts, name] = this.parentAndName(path);
       const fh = await (await this.dir(parts, true)).getFileHandle(name, { create: true });
       const w = await fh.createWritable();
       await w.write(typeof data === 'string' ? enc(data) : data);
@@ -2350,8 +2350,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
       try { await d.getDirectoryHandle(name); return { kind: 'directory' }; } catch (e) { if (notFound(e)) return null; throw e; }
     }
     async remove(path) {
-      const parts = this.split(path);
-      const name = parts.pop();
+      const [parts, name] = this.parentAndName(path);
       try { await (await this.dir(parts)).removeEntry(name); } catch (e) { if (notFound(e)) return; throw e; }
     }
   }
