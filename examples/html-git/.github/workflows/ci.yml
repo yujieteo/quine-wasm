@@ -18,6 +18,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: rustup target add wasm32-unknown-unknown
-      - run: wasm/build.sh --check
       - run: node --test test/*.test.js

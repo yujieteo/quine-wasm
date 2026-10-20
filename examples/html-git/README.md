@@ -10,7 +10,7 @@ The page works offline from `file://` with no libraries or CDN requests.
 | Tab | Function |
 | --- | --- |
 | init | Create a repository with an initial branch name. |
-| add | Stage selected files, including deleted files. The header checkbox selects or clears all files. |
+| add | Stage selected files, including deleted files. The header checkbox selects or clears all files. Long lists show 500 rows at a time. |
 | commit | Record staged changes with a message, author name and email. Complete a merge after you resolve conflicts. |
 | diff | Compare the index, files, HEAD or 2 commits. |
 | stash | Save changes to tracked files. Show, apply, pop or drop a stash. |
@@ -23,6 +23,8 @@ The page works offline from `file://` with no libraries or CDN requests.
 
 The page does not clone, fetch, pull, push, create tags or do interactive rebase.
 The **Refresh** button reads changes from other programs.
+In Chrome, the page watches the folder with `FileSystemObserver`.
+Thus a refresh lists only the folders that changed.
 The log, tree and diff controls read their own view without a full folder scan.
 
 ## Restore old code
@@ -51,32 +53,19 @@ Firefox, Safari and mobile browsers do not supply the required directory picker.
 Allow read and write access when the browser asks.
 Chrome can refuse access to system folders. Select a project folder.
 
-## Engine and build
+## Engine
 
-The original engine uses JavaScript for Git data and storage operations.
-An original Rust wasm module supplies SHA-1, zlib inflate and deflate, and delta apply.
-It uses no external crates, packages or copied library code.
-The module and the Latin subset of Inter are embedded as base64 in `index.html`.
+The engine is JavaScript with no libraries, including SHA-1, zlib and delta apply.
+The Latin subset of Inter is embedded as base64 in `index.html`.
 IDs, paths and diffs use a system monospace font.
+The page needs no build step.
 
 The engine reads loose objects, pack index version 2, ofs-delta and ref-delta objects,
 loose refs, packed refs, reflogs, and index versions 2 and 3.
 It writes index version 2.
+An add or commit with 100 or more new objects writes 1 pack and a version 2 pack index.
+Fewer new objects become loose objects.
 Stashes and interrupted merges and rebases use Git-compatible state.
-
-To build the wasm module, use Rust 1.97.0 with the `wasm32-unknown-unknown` target.
-The toolchain version is fixed in `rust-toolchain.toml`.
-
-```sh
-wasm/build.sh
-wasm/build.sh --check
-npm test
-```
-
-The first command updates the embedded module.
-The second command verifies that the source build equals the embedded bytes.
-CI repeats that check and the tests.
-No Rust tools are necessary to open the page.
 
 ## Tests and speed
 
@@ -85,7 +74,13 @@ They compare object bytes, diffs, index trees, status, history and refs with Git
 They check merge, rebase, reset and stash results and conflict states.
 Restore tests compare `git status --porcelain` and `git write-tree` with Git restore on a copy.
 Safety tests check that dirty paths and untracked files remain intact after a refused restore.
-Both packed delta formats and malformed wasm inputs have tests.
+Both packed delta formats and malformed zlib and delta inputs have tests.
+A test adds 3,007 files and checks the pack with `git verify-pack`.
+It compares status and `git ls-files` with Git, and runs `git fsck --full --strict`.
+
+```sh
+npm test
+```
 
 For a read-only speed test on an existing packed repository:
 
@@ -98,24 +93,35 @@ The script reports the median of 5 trials with the Node engine loader.
 Open and refresh times include status, branches, configuration and stash reads.
 They exclude the browser directory picker and DOM work.
 Log reads 100 commits. Tree reads all reachable commits and returns 100 graph rows.
-The object cache retains decoded delta bases.
-Packed objects no longer cause a failed loose-object file read first.
 
 On a packed Preact clone with 9,146 commits, these are the measured times in milliseconds.
 The clone HEAD was `e736c2df9cd586a5429c7d4364f961a79c75df00`.
-The test used Node 24.21.0 on macOS.
+The test used Node 24.21.0 on macOS. Each value is the median of 3 runs.
 
-| Operation | Before | After |
+| Operation | Time (ms) |
+| --- | ---: |
+| Open | 16.69 |
+| Refresh after an action | 5.37 |
+| Status | 4.49 |
+| Log | 4.19 |
+| Tree | 215.39 |
+
+Commits with many files were measured in headless Chrome on an OPFS folder.
+The folder had 100,000 files of about 120 bytes in 1,000 folders.
+Each value is the median of 3 runs on macOS, in seconds.
+
+| Click | Time (s) | Browser file calls for each file |
 | --- | ---: | ---: |
-| Open | 12.27 | 11.63 |
-| Refresh after an action | 6.29 | 6.80 |
-| Status | 5.83 | 5.94 |
-| Log | 4.08 | 1.79 |
-| Tree | 223.74 | 89.33 |
+| Open the folder (first status) | 9.03 | 1.01 |
+| Add all files | 35.73 | 3.01 |
+| Commit | 0.95 | less than 0.01 |
+| Refresh | 0.30 | less than 0.01 |
 
-The profile showed inflate, Huffman table creation and file I/O as major costs.
-The tree improved most. Status and full refresh did not improve in this test.
-These local engine times do not predict native browser filesystem times.
+The add click reads each file once. File reads use most of the add time.
+SHA-1 and zlib use less than 5% of it.
+In Chrome, `FileSystemObserver` lets refresh and commit skip folders that did not change.
+Without it, each of these clicks lists all folders again, which takes 10 to 14 seconds.
+These times change with the machine load.
 
 ## Limits
 
@@ -128,7 +134,7 @@ These local engine times do not predict native browser filesystem times.
 - Diff can choose different hunks from Git when lines repeat. It does not quote paths like `core.quotePath` or show combined conflict diffs.
 - Stash does not include untracked files. It has no `--keep-index` or `--index` option. Resolve conflicts, add the files, then drop the stash.
 - Index version 4, split index, linked worktrees, submodules, SHA-256 repositories and external `.git` directories are not supported.
-- The engine keeps objects in memory. It is intended for small and medium repositories. A wasm input or expanded object must not exceed 256 MiB.
+- The engine keeps objects in memory. It is intended for repositories with small and medium files.
 - Chrome uses temporary `*.crswap` files for writes. The engine ignores these files.
 
 ## Font license

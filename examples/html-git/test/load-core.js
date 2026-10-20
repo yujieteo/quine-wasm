@@ -15,27 +15,45 @@ function loadCore(htmlPath = path.join(__dirname, '..', 'index.html')) {
   return mod.exports;
 }
 
+// Browsers report File.lastModified in whole milliseconds; mirror that.
+const fileStat = (s) => ({ kind: 'file', size: s.size, mtimeMs: Math.floor(s.mtimeMs) });
+
 class NodeFS {
   constructor(root) { this.root = root; }
   abs(p) { return path.join(this.root, ...p.split('/').filter(Boolean)); }
-  async readFile(p) {
-    try { return new Uint8Array(await fsp.readFile(this.abs(p))); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR' || e.code === 'EISDIR') return null; throw e; }
+  // With { stat: true }: { data, stat } from 1 open file, so the stat data matches the content.
+  async readFile(p, opts) {
+    let fh;
+    try {
+      fh = await fsp.open(this.abs(p), 'r');
+      const st = await fh.stat();
+      if (st.isDirectory()) return null;
+      const data = new Uint8Array(await fh.readFile());
+      return opts && opts.stat ? { data, stat: fileStat(st) } : data;
+    } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR' || e.code === 'EISDIR') return null; throw e; } finally { if (fh) await fh.close(); }
   }
   async writeFile(p, data) {
     await fsp.mkdir(path.dirname(this.abs(p)), { recursive: true });
     await fsp.writeFile(this.abs(p), data);
   }
   async mkdir(p) { await fsp.mkdir(this.abs(p), { recursive: true }); }
-  async readdir(p) {
+  // With { stat: true }, file entries also have the stat data.
+  async readdir(p, opts) {
     try {
-      return (await fsp.readdir(this.abs(p), { withFileTypes: true })).map((d) => ({ name: d.name, kind: d.isDirectory() ? 'directory' : 'file' }));
+      const out = [];
+      for (const d of await fsp.readdir(this.abs(p), { withFileTypes: true })) {
+        if (d.isDirectory()) { out.push({ name: d.name, kind: 'directory' }); continue; }
+        if (!opts || !opts.stat) { out.push({ name: d.name, kind: 'file' }); continue; }
+        const st = await this.stat(p ? `${p}/${d.name}` : d.name);
+        if (st) out.push({ name: d.name, ...st });
+      }
+      return out;
     } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null; throw e; }
   }
   async stat(p) {
     try {
       const s = await fsp.stat(this.abs(p));
-      // Browsers report File.lastModified in whole milliseconds; mirror that.
-      return s.isDirectory() ? { kind: 'directory' } : { kind: 'file', size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
+      return s.isDirectory() ? { kind: 'directory' } : fileStat(s);
     } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null; throw e; }
   }
   async remove(p) {

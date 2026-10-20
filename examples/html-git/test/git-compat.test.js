@@ -49,7 +49,7 @@ test('SHA-1 matches node:crypto', () => {
 
 test('deflate/inflate interoperate with zlib', () => {
   const samples = [
-    Buffer.alloc(0), Buffer.from('a'), Buffer.from('hello hello hello hello world\n'.repeat(500)),
+    Buffer.alloc(0), Buffer.from('a'), Buffer.from('small file text\n'.repeat(20)), Buffer.from('hello hello hello hello world\n'.repeat(500)),
     crypto.randomBytes(70000), Buffer.from(Array.from({ length: 50000 }, (_, i) => (i * 7) % 13)),
     Buffer.alloc(100000, 0x41),
   ];
@@ -227,6 +227,68 @@ test('init/add/commit/branch/merge produce a repository real git accepts', async
   git(dir, 'reflog', 'show', 'main');
   fsck(dir);
   assert.equal(git(dir, 'rev-list', '--all', '--count').trim(), '11');
+});
+
+test('many files: 1 add writes a pack that git verifies, and status and ls-files agree with git', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  for (let a = 0; a < 30; a++) for (let b = 0; b < 100; b++) write(`d${a}/f${b}.txt`, `file ${a} ${b}\n`);
+  write('same1.txt', 'same\n'); write('same2.txt', 'same\n');
+  write('.gitignore', '*.log\n'); write('d0/x.log', 'ignored\n');
+  write('nested/.git/HEAD', 'ref: refs/heads/main\n'); write('nested/inner.txt', 'not ours\n');
+  for (const name of ['z', '\u00e9', '\ue000', '\u{1f600}']) write(`u/${name}.txt`, name);
+  const porcelain = () => git(dir, '-c', 'core.quotePath=false', 'status', '--porcelain', '--untracked-files=all').split('\n').filter((l) => l && !l.startsWith('?? nested/')).join('\n');
+  const ours = async () => (await repo.status()).entries.map((e) => `${e.x}${e.y} ${e.path}`).join('\n');
+  assert.equal(await ours(), porcelain());
+  const all = (await repo.status()).entries.map((e) => e.path);
+  assert.equal(all.length, 3007);
+
+  await repo.add(all);
+  const packDir = path.join(dir, '.git/objects/pack');
+  const idx = fs.readdirSync(packDir).filter((f) => f.endsWith('.idx'));
+  assert.equal(idx.length, 1, '1 add of many files writes 1 pack');
+  const verify = git(dir, 'verify-pack', '-v', path.join(packDir, idx[0]));
+  assert.match(verify, /non delta: 3006 objects/, 'the 2 files with the same content give 1 object');
+  assert.equal(git(dir, 'count-objects', '-v').match(/^count: (\d+)/m)[1], '0', 'no loose objects');
+  assert.equal(await ours(), porcelain());
+  assert.deepEqual(git(dir, '-c', 'core.quotePath=false', 'ls-files', '-s').trim().split('\n'), (await repo.readIndex()).map((e) => `${e.mode.toString(8)} ${e.sha} 0\t${e.path}`));
+
+  await repo.commit({ message: 'many', ident: ME, date: tick() });
+  fsck(dir);
+  assert.equal(await ours(), '');
+  assert.equal(porcelain(), '');
+
+  // A few changes: they go to loose objects, and the status agrees with git.
+  write('d3/f7.txt', 'changed\n');
+  fs.rmSync(path.join(dir, 'd4/f9.txt'));
+  write('d5/new.txt', 'new\n');
+  assert.equal(await ours(), porcelain());
+  await repo.add(['d3/f7.txt', 'd4/f9.txt', 'd5/new.txt']);
+  assert.equal(fs.readdirSync(packDir).filter((f) => f.endsWith('.idx')).length, 1);
+  assert.equal(await ours(), porcelain());
+  await repo.commit({ message: 'few', ident: ME, date: tick() });
+  fsck(dir);
+
+  // git gc replaces our packs. The next add reads the pack folder again, so the same Repo
+  // finds the new pack and does not read the deleted one.
+  git(dir, 'gc', '-q');
+  write('d8/f8.txt', 'after gc\n');
+  await repo.add(['d8/f8.txt']);
+  assert.match((await repo.diff({ from: 'HEAD', to: 'index' })).text, /-file 8 8\n\+after gc/);
+  await repo.commit({ message: 'after gc', ident: ME, date: tick() });
+  fsck(dir);
+  assert.equal(await ours(), porcelain());
+
+  // Racy git: a change with the same size and mtime as the index entry, made in the same tick as
+  // the index write, must show as modified.
+  const file = path.join(dir, 'd6/f1.txt');
+  const entry = (await repo.readIndex()).find((e) => e.path === 'd6/f1.txt');
+  const t = new Date(entry.mtimeS * 1000 + Math.floor(entry.mtimeN / 1e6));
+  fs.writeFileSync(file, 'FILE 6 1\n');
+  fs.utimesSync(file, t, t);
+  fs.utimesSync(path.join(dir, '.git/index'), t, t);
+  assert.equal(await ours(), ' M d6/f1.txt');
+  assert.equal(porcelain(), ' M d6/f1.txt');
 });
 
 test('works on repositories created and packed by real git', async () => {
@@ -706,7 +768,7 @@ test('restore keeps unrelated local edits and handles tracked file-directory cha
   assert.equal(fs.readFileSync(path.join(dir, 'shape/untracked'), 'utf8'), 'keep\n');
 });
 
-test('wasm rejects truncated zlib streams, bad checksums and invalid deltas', () => {
+test('inflate and applyDelta reject truncated zlib streams, bad checksums and invalid deltas', () => {
   const stream = zlib.deflateSync(Buffer.from('contents\n'.repeat(100)));
   for (const n of [0, 1, 2, 3, stream.length - 1]) assert.throws(() => G.inflate(stream.subarray(0, n)), /zlib/);
   const bad = Buffer.from(stream); bad[bad.length - 1] ^= 1;
