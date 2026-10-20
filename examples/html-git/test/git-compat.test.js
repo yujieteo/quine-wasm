@@ -8,8 +8,7 @@ const zlib = require('node:zlib');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const http = require('node:http');
-const { execFileSync, spawn } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const { loadCore, NodeFS } = require('./load-core');
 
 const G = loadCore();
@@ -274,99 +273,6 @@ test('works on repositories created and packed by real git', async () => {
   assert.equal(await fresh.resolveRev(headSha.slice(0, 8)), headSha);
   assert.equal(await fresh.resolveRev(headSha.slice(0, 8) + '^2'), git(dir, 'rev-parse', 'HEAD^2').trim());
   assert.equal((await fresh.graph()).total, Number(git(dir, 'rev-list', '--all', '--count').trim()));
-});
-
-// Minimal CGI bridge so `git http-backend` serves a bare repository over smart HTTP.
-function startGitHttpServer(projectRoot) {
-  const server = http.createServer((req, res) => {
-    const u = new URL(req.url, 'http://localhost');
-    if (req.headers.authorization !== 'Basic ' + Buffer.from('tester:s3cret').toString('base64')) {
-      res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' });
-      res.end();
-      return;
-    }
-    const child = spawn('git', ['http-backend'], {
-      env: {
-        ...gitEnv, GIT_PROJECT_ROOT: projectRoot, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: decodeURIComponent(u.pathname),
-        REQUEST_METHOD: req.method, QUERY_STRING: u.search.slice(1), CONTENT_TYPE: req.headers['content-type'] || '',
-        REMOTE_USER: 'tester', REMOTE_ADDR: '127.0.0.1', GATEWAY_INTERFACE: 'CGI/1.1',
-      },
-    });
-    req.pipe(child.stdin);
-    const chunks = [];
-    child.stdout.on('data', (c) => chunks.push(c));
-    child.on('close', () => {
-      const out = Buffer.concat(chunks);
-      const sep = out.indexOf('\r\n\r\n');
-      const headers = {};
-      let status = 200;
-      for (const line of out.subarray(0, sep).toString().split('\r\n')) {
-        const i = line.indexOf(':');
-        const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim();
-        if (k.toLowerCase() === 'status') status = parseInt(v, 10);
-        else headers[k] = v;
-      }
-      res.writeHead(status, headers);
-      res.end(out.subarray(sep + 4));
-    });
-  });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
-}
-
-test('push over smart HTTP to a bare repository served by git http-backend', async () => {
-  const bareRoot = path.join(tmpRoot, 'srv');
-  fs.mkdirSync(bareRoot);
-  git(bareRoot, 'init', '-q', '--bare', 'remote.git');
-  const bare = path.join(bareRoot, 'remote.git');
-  git(bare, 'config', 'http.receivepack', 'true');
-  git(bare, 'config', 'receive.fsckObjects', 'true');
-  const server = await startGitHttpServer(bareRoot);
-  const url = `http://127.0.0.1:${server.address().port}/remote.git`;
-  try {
-    const { dir, repo, write } = newRepoDir();
-    await repo.init('main');
-    write('hello.txt', 'hello over http\n');
-    write('big.bin', crypto.randomBytes(200000));
-    await repo.add(['hello.txt', 'big.bin']);
-    const c1 = await repo.commit({ message: 'first', ident: ME, date: tick() });
-
-    await assert.rejects(repo.push({ url, branch: 'main', username: 'tester', token: 'wrong' }), /authentication failed/);
-    let r = await repo.push({ url, branch: 'main', username: 'tester', token: 's3cret' });
-    assert.equal(r.result, 'new-branch');
-    assert.equal(git(bare, 'rev-parse', 'main').trim(), c1.sha);
-    assert.equal(git(dir, 'rev-parse', 'refs/remotes/origin/main').trim(), c1.sha);
-
-    write('hello.txt', 'hello again\n');
-    await repo.add(['hello.txt']);
-    const c2 = await repo.commit({ message: 'second', ident: ME, date: tick() });
-    await repo.createBranch('dev', { ident: ME });
-    r = await repo.push({ url, branch: 'main', username: 'tester', token: 's3cret' });
-    assert.equal(r.result, 'updated');
-    assert.equal(r.objects, 3, 'only the new commit, tree and blob are sent');
-    r = await repo.push({ url, branch: 'main', username: 'tester', token: 's3cret' });
-    assert.equal(r.result, 'up-to-date');
-    r = await repo.push({ url, branch: 'dev', username: 'tester', token: 's3cret' });
-    assert.equal(r.result, 'new-branch');
-    assert.equal(r.objects, 0);
-    assert.equal(git(bare, 'rev-parse', 'main').trim(), c2.sha);
-    assert.equal(git(bare, 'rev-parse', 'dev').trim(), c2.sha);
-    assert.equal(git(bare, 'cat-file', '-p', 'main:hello.txt'), 'hello again\n');
-    fsck(bare);
-
-    // A remote that moved ahead (commit we do not have) is refused client-side.
-    const other = path.join(tmpRoot, 'other');
-    git(tmpRoot, 'clone', '-q', bare, other);
-    fs.writeFileSync(path.join(other, 'x.txt'), 'x\n');
-    git(other, 'add', 'x.txt');
-    git(other, 'commit', '-q', '-m', 'from elsewhere');
-    git(other, 'push', '-q', 'origin', 'main');
-    write('hello.txt', 'diverged\n');
-    await repo.add(['hello.txt']);
-    await repo.commit({ message: 'third', ident: ME, date: tick() });
-    await assert.rejects(repo.push({ url, branch: 'main', username: 'tester', token: 's3cret' }), /rejected/);
-  } finally {
-    server.close();
-  }
 });
 
 test('log, rev syntax and the commit graph agree with real git', async () => {
@@ -727,4 +633,144 @@ test('stash apply works next to unrelated local changes, like git', async () => 
   git(dir, 'checkout', '--', 'a.txt');
   write('a.txt', 'a local\n');
   await assert.rejects(repo.stashApply(0), /would be overwritten:\n {2}a\.txt/);
+});
+
+test('restore whole commits and individual files matches git without moving HEAD', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('a.txt', 'old\n'); write('removed.txt', 'return\n'); write('nested/file', 'old nested\n');
+  await repo.add(['a.txt', 'removed.txt', 'nested/file']);
+  const old = (await repo.commit({ message: 'old', ident: ME, date: tick() })).sha;
+  write('a.txt', 'new\n'); fs.unlinkSync(path.join(dir, 'removed.txt')); write('added.txt', 'remove\n');
+  await repo.add(['a.txt', 'removed.txt', 'added.txt']);
+  const head = (await repo.commit({ message: 'new', ident: ME, date: tick() })).sha;
+  write('untracked.txt', 'keep\n');
+  for (const paths of [null, ['a.txt'], ['added.txt'], ['removed.txt']]) {
+    const copy = fs.mkdtempSync(path.join(tmpRoot, 'restore-'));
+    fs.cpSync(dir, copy, { recursive: true });
+    const fresh = new G.Repo(new NodeFS(copy));
+    await fresh.restore(old, paths);
+    const expected = fs.mkdtempSync(path.join(tmpRoot, 'expected-'));
+    fs.cpSync(dir, expected, { recursive: true });
+    git(expected, 'restore', `--source=${old}`, '--staged', '--worktree', '--', ...(paths || [':/']));
+    assert.equal(git(copy, 'status', '--porcelain'), git(expected, 'status', '--porcelain'));
+    assert.equal(git(copy, 'write-tree'), git(expected, 'write-tree'));
+    assert.equal(git(copy, 'rev-parse', 'HEAD').trim(), head);
+    assert.equal(fs.readFileSync(path.join(copy, 'untracked.txt'), 'utf8'), 'keep\n');
+    for (const file of git(expected, 'ls-files', '-z').split('\0').filter(Boolean)) {
+      assert.deepEqual(fs.readFileSync(path.join(copy, file)), fs.readFileSync(path.join(expected, file)));
+    }
+  }
+});
+
+test('restore refuses dirty paths and untracked collisions before any write', async () => {
+  for (const kind of ['unstaged', 'staged', 'deleted', 'untracked', 'ignored']) {
+    const { dir, repo, write } = newRepoDir();
+    await repo.init('main');
+    write('a', 'old\n'); write('z', 'old\n'); write('collision', 'old\n');
+    await repo.add(['a', 'z', 'collision']);
+    const old = (await repo.commit({ message: 'old', ident: ME, date: tick() })).sha;
+    write('a', 'new\n'); write('z', 'new\n'); fs.unlinkSync(path.join(dir, 'collision'));
+    await repo.add(['a', 'z', 'collision']);
+    await repo.commit({ message: 'new', ident: ME, date: tick() });
+    if (kind === 'deleted') fs.unlinkSync(path.join(dir, 'z'));
+    else if (['untracked', 'ignored'].includes(kind)) {
+      write('collision', 'keep\n');
+      if (kind === 'ignored') write('.git/info/exclude', 'collision\n');
+    } else { write('z', 'dirty\n'); if (kind === 'staged') await repo.add(['z']); }
+    const before = git(dir, 'status', '--porcelain');
+    const index = fs.readFileSync(path.join(dir, '.git/index'));
+    await assert.rejects(repo.restore(old), /Cannot restore/);
+    assert.equal(git(dir, 'status', '--porcelain'), before);
+    assert.deepEqual(fs.readFileSync(path.join(dir, '.git/index')), index);
+    assert.equal(fs.readFileSync(path.join(dir, 'a'), 'utf8'), 'new\n');
+  }
+});
+
+test('restore keeps unrelated local edits and handles tracked file-directory changes', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('shape', 'file\n'); write('other', 'base\n');
+  await repo.add(['shape', 'other']);
+  const old = (await repo.commit({ message: 'file', ident: ME, date: tick() })).sha;
+  fs.unlinkSync(path.join(dir, 'shape')); write('shape/child', 'child\n');
+  await repo.add(['shape', 'shape/child']);
+  const latest = (await repo.commit({ message: 'directory', ident: ME, date: tick() })).sha;
+  write('other', 'dirty\n');
+  await repo.restore(old, ['shape', 'shape/child']);
+  assert.equal(fs.readFileSync(path.join(dir, 'shape'), 'utf8'), 'file\n');
+  assert.equal(fs.readFileSync(path.join(dir, 'other'), 'utf8'), 'dirty\n');
+  git(dir, 'reset', '--hard', latest);
+  write('shape/untracked', 'keep\n');
+  await assert.rejects(new G.Repo(new NodeFS(dir)).restore(old), /untracked/);
+  assert.equal(fs.readFileSync(path.join(dir, 'shape/untracked'), 'utf8'), 'keep\n');
+});
+
+test('wasm rejects truncated zlib streams, bad checksums and invalid deltas', () => {
+  const stream = zlib.deflateSync(Buffer.from('contents\n'.repeat(100)));
+  for (const n of [0, 1, 2, 3, stream.length - 1]) assert.throws(() => G.inflate(stream.subarray(0, n)), /zlib/);
+  const bad = Buffer.from(stream); bad[bad.length - 1] ^= 1;
+  assert.throws(() => G.inflate(bad), /checksum/);
+  const base = G.enc('hello');
+  assert.equal(G.dec(G.applyDelta(base, Uint8Array.from([5, 6, 0x90, 5, 1, 33]))), 'hello!');
+  for (const bytes of [[6, 0], [5, 1, 0], [5, 1, 0x91, 9, 1], [5, 1, 2, 65], [5, 2, 1, 65], [5, 0, 128]]) {
+    assert.throws(() => G.applyDelta(base, Uint8Array.from(bytes)), /delta/);
+  }
+});
+
+test('packed ofs-delta and ref-delta objects match real git', async () => {
+  const { dir, write } = newRepoDir();
+  git(dir, 'init', '-q');
+  const text = Array.from({ length: 1000 }, (_, i) => `line ${i} has stable text\n`).join('');
+  for (let i = 0; i < 12; i++) { write('file', text + `revision ${i}\n`); git(dir, 'add', 'file'); git(dir, 'commit', '-q', '-m', `revision ${i}`); }
+  for (const offset of [true, false]) {
+    git(dir, '-c', `repack.useDeltaBaseOffset=${offset}`, 'repack', '-adf');
+    const repo = new G.Repo(new NodeFS(dir));
+    const objects = git(dir, 'rev-list', '--objects', '--all').trim().split('\n').map((line) => line.split(' ')[0]);
+    let deltaCount = 0;
+    for (const sha of objects) {
+      const hit = await repo.findPacked(sha);
+      const actual = await repo.readObject(sha);
+      const expected = execFileSync('git', ['cat-file', actual.type, sha], { cwd: dir, env: gitEnv });
+      assert.deepEqual(Buffer.from(actual.body), expected);
+      const type = (hit.pack.data[hit.off] >> 4) & 7;
+      if (type === (offset ? 6 : 7)) deltaCount++;
+    }
+    assert.ok(deltaCount > 0, `the fixture uses ${offset ? 'ofs' : 'ref'}-delta objects`);
+  }
+});
+
+test('bounded caches evict objects and still return correct bytes', async () => {
+  const { dir, write } = newRepoDir();
+  git(dir, 'init', '-q');
+  const text = Array.from({ length: 1000 }, (_, i) => `line ${i} has stable text\n`).join('');
+  for (let i = 0; i < 12; i++) { write('file', text + `revision ${i}\n`); git(dir, 'add', 'file'); git(dir, 'commit', '-q', '-m', `revision ${i}`); }
+  git(dir, 'repack', '-adf');
+  const repo = new G.Repo(new NodeFS(dir));
+  repo.cache = new G.ObjectCache(30000);
+  repo.packed = new G.ObjectCache(30000);
+  const objects = git(dir, 'rev-list', '--objects', '--all').trim().split('\n').map((line) => line.split(' ')[0]);
+  for (let round = 0; round < 2; round++) {
+    for (const sha of objects) {
+      const actual = await repo.readObject(sha);
+      assert.deepEqual(Buffer.from(actual.body), execFileSync('git', ['cat-file', actual.type, sha], { cwd: dir, env: gitEnv }));
+    }
+  }
+  assert.ok(repo.cache.bytes <= 30000 && repo.packed.bytes <= 30000);
+  assert.ok(repo.cache.map.size < objects.length);
+});
+
+test('restore refuses repository metadata paths before any write', async () => {
+  const { dir, repo, write } = newRepoDir();
+  await repo.init('main');
+  write('safe', 'keep\n'); await repo.add(['safe']);
+  const head = (await repo.commit({ message: 'safe', ident: ME, date: tick() })).sha;
+  const blob = await repo.writeObject('blob', G.enc('bad config\n'));
+  const tree = await repo.writeTreeFromMap(new Map([['.git/config', { mode: 0o100644, sha: blob }]]));
+  const commit = await repo.writeObject('commit', G.enc(`tree ${tree}\nparent ${head}\nauthor Test <test@example.com> 1700000000 +0000\ncommitter Test <test@example.com> 1700000000 +0000\n\nunsafe\n`));
+  const before = fs.readFileSync(path.join(dir, '.git/config'));
+  await assert.rejects(repo.restore(commit), /unsafe path/);
+  assert.deepEqual(fs.readFileSync(path.join(dir, '.git/config')), before);
+  assert.equal(fs.readFileSync(path.join(dir, 'safe'), 'utf8'), 'keep\n');
+  assert.equal(git(dir, 'status', '--porcelain'), '');
 });

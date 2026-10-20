@@ -6,8 +6,8 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 
-function loadCore() {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+function loadCore(htmlPath = path.join(__dirname, '..', 'index.html')) {
+  const html = fs.readFileSync(htmlPath, 'utf8');
   const m = /<script id="git-core">([\s\S]*?)<\/script>/.exec(html);
   if (!m) throw new Error('git-core script block not found in index.html');
   const mod = { exports: {} };
