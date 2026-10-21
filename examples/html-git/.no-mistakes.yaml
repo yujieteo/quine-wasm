@@ -1,0 +1,3 @@
+# The no-mistakes test step runs this command. It matches the test step of .github/workflows/ci.yml.
+commands:
+  test: node --test test/*.test.js
