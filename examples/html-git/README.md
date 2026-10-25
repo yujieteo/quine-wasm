@@ -94,35 +94,6 @@ Open and refresh times include status, branches, configuration and stash reads.
 They exclude the browser directory picker and DOM work.
 Log reads 100 commits. Tree reads all reachable commits and returns 100 graph rows.
 
-On a packed Preact clone with 9,146 commits, these are the measured times in milliseconds.
-The clone HEAD was `e736c2df9cd586a5429c7d4364f961a79c75df00`.
-The test used Node 24.21.0 on macOS. Each value is the median of 3 runs.
-
-| Operation | Time (ms) |
-| --- | ---: |
-| Open | 16.69 |
-| Refresh after an action | 5.37 |
-| Status | 4.49 |
-| Log | 4.19 |
-| Tree | 215.39 |
-
-Commits with many files were measured in headless Chrome on an OPFS folder.
-The folder had 100,000 files of about 120 bytes in 1,000 folders.
-Each value is the median of 3 runs on macOS, in seconds.
-
-| Click | Time (s) | Browser file calls for each file |
-| --- | ---: | ---: |
-| Open the folder (first status) | 9.03 | 1.01 |
-| Add all files | 35.73 | 3.01 |
-| Commit | 0.95 | less than 0.01 |
-| Refresh | 0.30 | less than 0.01 |
-
-The add click reads each file once. File reads use most of the add time.
-SHA-1 and zlib use less than 5% of it.
-In Chrome, `FileSystemObserver` lets refresh and commit skip folders that did not change.
-Without it, each of these clicks lists all folders again, which takes 10 to 14 seconds.
-These times change with the machine load.
-
 ## Limits
 
 - Browsers cannot read or set executable bits or symlinks. New files use mode `100644`. Existing entries retain their index mode.
