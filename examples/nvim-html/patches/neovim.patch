@@ -1,0 +1,47 @@
+diff -ruN a/src/nvim/lua/treesitter.c b/src/nvim/lua/treesitter.c
+--- a/src/nvim/lua/treesitter.c
++++ b/src/nvim/lua/treesitter.c
+@@ -131,9 +131,43 @@
+   return add_language(L, false);
+ }
+ 
++#ifdef __EMSCRIPTEN__
++// Wasm has no dlopen: the core parsers are linked into the program.
++// A macro keeps these out of the generated header.
++# define BUILTIN_PARSER(name) const TSLanguage *tree_sitter_##name(void);
++BUILTIN_PARSER(c)
++BUILTIN_PARSER(lua)
++BUILTIN_PARSER(vim)
++BUILTIN_PARSER(vimdoc)
++BUILTIN_PARSER(query)
++BUILTIN_PARSER(markdown)
++BUILTIN_PARSER(markdown_inline)
++static const struct {
++  const char *name;
++  const TSLanguage *(*fn)(void);
++} builtin_parsers[] = {
++  { "c", tree_sitter_c },
++  { "lua", tree_sitter_lua },
++  { "vim", tree_sitter_vim },
++  { "vimdoc", tree_sitter_vimdoc },
++  { "query", tree_sitter_query },
++  { "markdown", tree_sitter_markdown },
++  { "markdown_inline", tree_sitter_markdown_inline },
++};
++#endif
++
+ static const TSLanguage *load_language_from_object(lua_State *L, const char *path,
+                                                    const char *lang_name, const char *symbol)
+ {
++#ifdef __EMSCRIPTEN__
++  for (size_t i = 0; i < ARRAY_SIZE(builtin_parsers); i++) {
++    if (strequal(builtin_parsers[i].name, symbol)) {
++      return builtin_parsers[i].fn();
++    }
++  }
++  luaL_error(L, "Failed to load parser for language '%s': nvim.html has only built-in parsers",
++             lang_name);
++#endif
+   uv_lib_t lib;
+   if (uv_dlopen(path, &lib)) {
+     xstrlcpy(IObuff, uv_dlerror(&lib), sizeof(IObuff));

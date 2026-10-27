@@ -1,0 +1,66 @@
+diff -ruN a/src/threadpool.c b/src/threadpool.c
+--- a/src/threadpool.c
++++ b/src/threadpool.c
+@@ -282,7 +282,16 @@
+   w->loop = loop;
+   w->work = work;
+   w->done = done;
++#ifdef __EMSCRIPTEN__
++  /* No threads: run the work now and report it done on the next loop turn. */
++  (void) kind;
++  w->work(w);
++  w->work = NULL;
++  uv__queue_insert_tail(&loop->wq, &w->wq);
++  uv_async_send(&loop->wq_async);
++#else
+   post(&w->wq, kind);
++#endif
+ }
+ 
+ 
+diff -ruN a/src/unix/process.c b/src/unix/process.c
+--- a/src/unix/process.c
++++ b/src/unix/process.c
+@@ -966,7 +966,13 @@
+ int uv_spawn(uv_loop_t* loop,
+              uv_process_t* process,
+              const uv_process_options_t* options) {
+-#if defined(__APPLE__) && (TARGET_OS_TV || TARGET_OS_WATCH)
++#if defined(__EMSCRIPTEN__)
++  /* No processes. Callers close the handle after an error, so init it. */
++  uv__handle_init(loop, (uv_handle_t*)process, UV_PROCESS);
++  uv__queue_init(&process->queue);
++  process->status = 0;
++  return UV_ENOSYS;
++#elif defined(__APPLE__) && (TARGET_OS_TV || TARGET_OS_WATCH)
+   /* fork is marked __WATCHOS_PROHIBITED __TVOS_PROHIBITED. */
+   return UV_ENOSYS;
+ #else
+diff -ruN a/src/unix/tty.c b/src/unix/tty.c
+--- a/src/unix/tty.c
++++ b/src/unix/tty.c
+@@ -426,7 +426,11 @@
+     return UV_FILE;
+ 
+   if (S_ISCHR(s.st_mode))
++#ifdef __EMSCRIPTEN__
++    return UV_NAMED_PIPE;  /* stdio devices are pipes to the page */
++#else
+     return UV_FILE;  /* XXX UV_NAMED_PIPE? */
++#endif
+ 
+   if (S_ISFIFO(s.st_mode))
+     return UV_NAMED_PIPE;
+diff -ruN a/include/uv/unix.h b/include/uv/unix.h
+--- a/include/uv/unix.h
++++ b/include/uv/unix.h
+@@ -66,7 +66,8 @@
+       defined(__MSYS__)   || \
+       defined(__HAIKU__)  || \
+       defined(__QNX__)    || \
+-      defined(__GNU__)
++      defined(__GNU__)    || \
++      defined(__EMSCRIPTEN__)
+ # include "uv/posix.h"
+ #endif
+ 
