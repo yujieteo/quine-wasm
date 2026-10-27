@@ -326,7 +326,7 @@
     });
   }
   function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
-  $('quine-save').onclick = function () { save('button'); };
+  $('quine-save').onclick = function () { save('button'); term.focus(); };
   $('quine-open').onclick = function () {
     if (!lastCopy) return;
     window.open(URL.createObjectURL(new Blob([lastCopy.html], { type: 'text/html' })), '_blank');
@@ -495,7 +495,9 @@
         fs.chdir(system.cwd);
         wrapFS(fs);
       }],
-      onExit: function (code) { ended('exited with status ' + code); },
+      // After an Asyncify sleep, Emscripten exits with 0 when main returns, so only a
+      // non-zero status from exit() is certain.
+      onExit: function (code) { ended(code ? 'ended with status ' + code : 'ended'); },
       onAbort: function (what) { ended('stopped: ' + what); },
     };
     return QuineEngine(mod).then(function (m) {

@@ -97,6 +97,12 @@ function readAsset(rel) {
   return text.replace(/\n\/\/# sourceMappingURL=.*\s*$/, '\n');
 }
 
+// The MIT licence asks for its notice in each copy, so it goes in front of the inlined code.
+function licence(pkg) {
+  const text = fs.readFileSync(path.join(path.dirname(require.resolve(pkg + '/package.json')), 'LICENSE'), 'utf8');
+  return '/* ' + pkg + '\n' + text.replace(/\*\//g, '* /') + '*/\n';
+}
+
 // Text that goes inside a <script> or <style> element must not close it or open a comment.
 function checkRaw(name, text) {
   if (/<\/(script|style)|<!--/i.test(text)) fail(name + ' contains "</script", "</style" or "<!--"; it cannot be inlined');
@@ -173,7 +179,8 @@ function main() {
     'quine-store': store.quineSerialize([system].concat(store.quineTiddlers(seed))),
     'quine-runtime': runtime,
     'quine-xterm-css': checkRaw('xterm.css', readAsset('@xterm/xterm/css/xterm.css')),
-    'quine-xterm': checkRaw('xterm.js', readAsset('@xterm/xterm/lib/xterm.js') + readAsset('@xterm/addon-fit/lib/addon-fit.js')),
+    'quine-xterm': checkRaw('xterm.js', licence('@xterm/xterm') + readAsset('@xterm/xterm/lib/xterm.js') +
+      licence('@xterm/addon-fit') + readAsset('@xterm/addon-fit/lib/addon-fit.js')),
     'quine-engine': checkRaw('the engine', engine),
     'quine-shell': checkRaw('the shell', fs.readFileSync(path.join(ROOT, 'src/store.js'), 'utf8') +
       fs.readFileSync(path.join(ROOT, 'src/shell.js'), 'utf8')),
