@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@@QUINE_BLOCK:quine-title@@</title>
+<style id="quine-xterm-css">@@QUINE_BLOCK:quine-xterm-css@@</style>
+<style>
+:root { --bg: #fafafa; --fg: #1d1d1f; --line: #d0d0d5; --accent: #0a5fd6; --warn: #b3261e; --panel: #fff; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #18181b; --fg: #e8e8ea; --line: #3a3a40; --accent: #6aa6ff; --warn: #ff8a80; --panel: #222226; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
+header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+header h1 { font-size: 15px; margin: 0 8px 0 0; }
+button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text] { font: 13px ui-monospace, monospace; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); }
+#quine-status { flex: 1; min-width: 12em; font-size: 13px; }
+#quine-status.warn { color: var(--warn); }
+#quine-dirty { color: var(--accent); font-size: 13px; }
+main { flex: 1; display: flex; min-height: 0; }
+#quine-term { flex: 1; min-width: 0; background: #000; padding: 4px; }
+aside { width: 320px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-left: 1px solid var(--line); overflow: auto; }
+aside.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
+#quine-files { list-style: none; margin: 0; padding: 0; font: 12px ui-monospace, monospace; }
+#quine-files li { display: flex; justify-content: space-between; gap: 8px; padding: 1px 4px; cursor: pointer; border-radius: 3px; }
+#quine-files li:hover { background: var(--line); }
+#quine-editor { font: 12px ui-monospace, monospace; min-height: 12em; resize: vertical; background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+#quine-fallback { display: none; gap: 8px; align-items: center; font-size: 13px; }
+.row { display: flex; gap: 6px; align-items: center; }
+.row input { flex: 1; min-width: 0; }
+@media (max-width: 700px) { main { flex-direction: column; } aside { width: auto; border-left: 0; border-top: 1px solid var(--line); max-height: 40vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>@@QUINE_BLOCK:quine-title@@</h1>
+  <button id="quine-save" title="Save a new copy of this file with your files in it">Save</button>
+  <button id="quine-tar" title="Download your files as a .tar archive">Export files as .tar</button>
+  <button id="quine-again" hidden>Run again</button>
+  <span id="quine-dirty"></span>
+  <span id="quine-status"></span>
+  <span id="quine-fallback">The download did not start?
+    <button id="quine-open">Open copy in a tab</button>
+    <button id="quine-copy">Copy HTML</button></span>
+</header>
+<main>
+  <div id="quine-term"></div>
+  <aside id="quine-panel">
+    <label>Command <span class="row"><input type="text" id="quine-args" spellcheck="false"></span></label>
+    <label>Working folder <span class="row"><input type="text" id="quine-cwd" spellcheck="false"></span></label>
+    <div class="row"><strong>Files</strong>
+      <button id="quine-upload">Upload</button><input type="file" id="quine-upload-input" multiple hidden></div>
+    <ul id="quine-files"></ul>
+    <div class="row"><input type="text" id="quine-path" spellcheck="false" placeholder="path of file to edit"></div>
+    <textarea id="quine-editor" spellcheck="false"></textarea>
+    <div class="row"><button id="quine-write">Write file</button></div>
+  </aside>
+</main>
+<script type="application/json" id="quine-template">@@QUINE_BLOCK:quine-template@@</script>
+<script type="application/json" id="quine-config">@@QUINE_BLOCK:quine-config@@</script>
+<script type="application/json" id="quine-store" data-version="1" data-filter="@@QUINE_BLOCK:quine-filter@@">@@QUINE_BLOCK:quine-store@@</script>
+<script type="application/octet-stream" id="quine-runtime" data-encoding="base64 gzip ustar">@@QUINE_BLOCK:quine-runtime@@</script>
+<script id="quine-xterm">@@QUINE_BLOCK:quine-xterm@@</script>
+<script id="quine-engine">@@QUINE_BLOCK:quine-engine@@</script>
+<script id="quine-shell">@@QUINE_BLOCK:quine-shell@@</script>
+</body>
+</html>
