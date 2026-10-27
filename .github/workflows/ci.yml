@@ -15,9 +15,9 @@ jobs:
       - name: Build the SQLite demo, its IDBFS control and the test program
         run: nix develop -c sh -c 'sh examples/sqlite/build.sh && sh tests/build.sh'
       - name: Install browsers
-        run: nix develop -c npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Test in Chromium, Firefox and WebKit
-        run: nix develop -c npx playwright test --reporter list
+        run: npx playwright test --reporter list
       - uses: actions/upload-artifact@v4
         if: always()
         with:
