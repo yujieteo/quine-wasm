@@ -33,6 +33,7 @@ function quineGlob(glob) {
   var re = '';
   for (var i = 0; i < glob.length; i++) {
     var c = glob[i];
+    if (c === '/' && glob.slice(i + 1) === '**') { re += '(?:/.*)?'; break; }
     if (c === '*' && glob[i + 1] === '*') {
       i++;
       if (glob[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
@@ -44,21 +45,28 @@ function quineGlob(glob) {
 }
 
 // filter = { prefix, include: [globs], exclude: [globs] }. Returns a test for an absolute path.
+// test.enter(dir) is true when the folder and its parents are not excluded, so a walk must go into it.
 function quineFilter(filter) {
   var inc = filter.include.map(quineGlob);
   var exc = filter.exclude.map(quineGlob);
   var prefix = filter.prefix;
-  return function (path) {
-    if (path.indexOf(prefix + '/') !== 0) return false;
-    var rel = path.slice(prefix.length + 1);
-    var parts = rel.split('/');
-    if (parts.some(function (p) { return p === '' || p === '.' || p === '..'; })) return false;
+  function rel(path) {
+    if (path.indexOf(prefix + '/') !== 0) return null;
+    var r = path.slice(prefix.length + 1);
+    var parts = r.split('/');
+    if (parts.some(function (p) { return p === '' || p === '.' || p === '..'; })) return null;
     for (var i = 1; i <= parts.length; i++) {
       var sub = parts.slice(0, i).join('/');
-      if (exc.some(function (r) { return r.test(sub); })) return false;
+      if (exc.some(function (x) { return x.test(sub); })) return null;
     }
-    return inc.some(function (r) { return r.test(rel); });
-  };
+    return r;
+  }
+  function test(path) {
+    var r = rel(path);
+    return r !== null && inc.some(function (x) { return x.test(r); });
+  }
+  test.enter = function (path) { return rel(path) !== null; };
+  return test;
 }
 
 // entries: [{ path, dir: true } | { path, bytes }]. Returns tiddler objects.

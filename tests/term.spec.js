@@ -63,3 +63,28 @@ test('boot skips bad entries and refuses a newer store version', async ({ page }
   await page.click('#quine-save');
   await expect(page.locator('#quine-status')).toContainText('Save is off');
 });
+
+test('an include glob for a nested folder saves and restores the files in it', async ({ browser, page }, info) => {
+  const filter = { prefix: '/home/web', include: ['.config/nvim/**'], exclude: [] };
+  const nested = info.outputPath('nested.html');
+  fs.writeFileSync(nested, fs.readFileSync(file, 'utf8')
+    .replace(/data-filter="[^"]*"/, 'data-filter="' + JSON.stringify(filter).replace(/"/g, '&quot;') + '"'));
+  await page.goto('file://' + nested);
+  await shows(page, 'raw');
+  await page.fill('#quine-path', '/home/web/.config/nvim/init.lua');
+  await page.fill('#quine-editor', 'vim.g.mapleader = " "\n');
+  await page.click('#quine-write');
+  await expect(page.locator('#quine-files')).toContainText('.config/nvim/init.lua');
+
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#quine-save')]);
+  const copy = info.outputPath('copy', dl.suggestedFilename());
+  await dl.saveAs(copy);
+  const context = await browser.newContext();
+  const other = await context.newPage();
+  await other.goto('file://' + copy);
+  await shows(other, 'raw');
+  await expect(other.locator('#quine-files')).toContainText('.config/nvim/init.lua');
+  await other.locator('#quine-files li', { hasText: 'init.lua' }).click();
+  await expect(other.locator('#quine-editor')).toHaveValue('vim.g.mapleader = " "\n');
+  await context.close();
+});

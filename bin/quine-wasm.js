@@ -27,7 +27,6 @@ Options:
   --max-files N           most store entries that boot restores (default: 100000)
   --max-save-mb N         largest copy that Save writes (default: 1024)
   --persist store|idbfs   idbfs makes a control build with Emscripten IDBFS (default: store)
-  --emcc PATH             emcc to run (default: emcc)
 `;
 
 function fail(msg) {
@@ -36,7 +35,7 @@ function fail(msg) {
 }
 
 function parse(argv) {
-  const o = { include: [], exclude: [], ctrlS: 'page', persist: 'store', prefix: '/home/web', emcc: 'emcc',
+  const o = { include: [], exclude: [], ctrlS: 'page', persist: 'store', prefix: '/home/web',
     maxFileMb: 256, maxFiles: 100000, maxSaveMb: 1024 };
   const sep = argv.indexOf('--');
   if (sep < 0) fail('no "--" before the emcc arguments\n\n' + USAGE);
@@ -60,7 +59,6 @@ function parse(argv) {
       case '--max-files': o.maxFiles = Number(take(i++)); break;
       case '--max-save-mb': o.maxSaveMb = Number(take(i++)); break;
       case '--persist': o.persist = take(i++); break;
-      case '--emcc': o.emcc = take(i++); break;
       case '-h': case '--help': process.stdout.write(USAGE); process.exit(0); break;
       default: fail('unknown option ' + a + '\n\n' + USAGE);
     }
@@ -87,6 +85,8 @@ function walk(dir, rel = '') {
       out.push(...(sub.length ? sub : [{ name: r, dir: true }]));
     } else if (st.isFile()) {
       out.push({ name: r, bytes: new Uint8Array(fs.readFileSync(path.join(dir, r))) });
+    } else {
+      process.stderr.write('quine-wasm: warning: ' + path.join(dir, r) + ' is not a file or a folder (a symlink?), skipped\n');
     }
   }
   return out;
@@ -133,9 +133,9 @@ function main() {
     '-I' + path.join(ROOT, 'include'),
     ...(o.persist === 'idbfs' ? ['-lidbfs.js'] : []),
   ];
-  process.stderr.write('quine-wasm: ' + o.emcc + ' ' + emccArgs.join(' ') + '\n');
-  const r = spawnSync(o.emcc, emccArgs, { stdio: 'inherit' });
-  if (r.error) fail('could not run ' + o.emcc + ': ' + r.error.message);
+  process.stderr.write('quine-wasm: ' + 'emcc ' + emccArgs.join(' ') + '\n');
+  const r = spawnSync('emcc', emccArgs, { stdio: 'inherit' });
+  if (r.error) fail('could not run emcc: ' + r.error.message);
   if (r.status !== 0) fail('emcc failed with status ' + r.status);
   const engine = fs.readFileSync(engineJs, 'utf8');
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -154,7 +154,9 @@ function main() {
     if (!mount || !mount.startsWith('/')) fail('--runtime needs DIR:/absolute/mount');
     if (mount === o.prefix || mount.startsWith(o.prefix + '/')) fail('the runtime mount must be outside the prefix');
     runtimeMount = mount.replace(/\/+$/, '');
-    runtime = zlib.gzipSync(store.quineTarWrite(walk(dir)).bytes, { level: 9 }).toString('base64');
+    const tar = store.quineTarWrite(walk(dir));
+    if (tar.skipped.length) fail('runtime paths too long for ustar: ' + tar.skipped.join(', '));
+    runtime = zlib.gzipSync(tar.bytes, { level: 9 }).toString('base64');
   }
 
   const config = {

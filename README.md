@@ -86,7 +86,6 @@ node bin/quine-wasm.js -o app.html --args "app input.txt" -- -O2 app.c
 | `--max-files N` | 100000 | Boot skips store entries after this count. |
 | `--max-save-mb N` | 1024 | Save refuses to write a copy larger than this. |
 | `--persist store\|idbfs` | `store` | `idbfs` makes a control build that uses Emscripten IDBFS. |
-| `--emcc PATH` | `emcc` | The emcc to run. |
 
 Build the SQLite demo and the test program, then run the tests:
 

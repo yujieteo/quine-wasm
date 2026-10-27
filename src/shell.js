@@ -198,11 +198,12 @@
         if (n === '.' || n === '..') return;
         var p = dir + '/' + n;
         var st = fs.lstat(p);
-        if (fs.isLink(st.mode) || !saveable(p)) return;
+        if (fs.isLink(st.mode)) return;
         if (fs.isDir(st.mode)) {
-          kept++;
-          if (!walk(p)) out.push({ path: p, dir: true });
-        } else if (fs.isFile(st.mode)) {
+          if (!saveable.enter(p)) return;
+          if (walk(p)) kept++;
+          else if (saveable(p)) { kept++; out.push({ path: p, dir: true }); }
+        } else if (fs.isFile(st.mode) && saveable(p)) {
           kept++;
           out.push({ path: p, bytes: fs.readFile(p) });
         }
