@@ -1,0 +1,19 @@
+{
+  "name": "quine-wasm",
+  "version": "0.1.0",
+  "description": "Turn an Emscripten program into one portable HTML file whose files travel inside it",
+  "license": "MIT",
+  "bin": { "quine-wasm": "bin/quine-wasm.js" },
+  "files": ["bin", "src", "include"],
+  "scripts": {
+    "demo": "sh examples/sqlite/build.sh",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
