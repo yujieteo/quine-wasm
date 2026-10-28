@@ -864,3 +864,58 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Commit speed.
 The measured gain is 5 safe refusals that the previous probe lacked, with 5 compatible unsigned Commit cases.
+
+## Branch Create probe on 2026-10-28
+
+The Wasm probe now creates a branch at HEAD without a checkout.
+The baseline lacked this export, so the new test failed before the change.
+The probe uses libgit2 branch APIs and the folder bridge. It adds no package or separate ref parser.
+
+- Create a branch at HEAD with no change to HEAD, the index or file bytes.
+  Reason: The compatibility fixture verifies this existing page action against Git and JavaScript before an engine replacement.
+- Preserve all repository bytes after a refused Branch Create.
+  Reason: Invalid names, duplicate refs and external locks must not cause an unrelated write.
+
+| Case | Result and evidence |
+| --- | --- |
+| Simple, nested and Unicode names | Refs and reflogs match Git and JavaScript. |
+| Detached HEAD | The new branch points to HEAD. HEAD stays detached. |
+| Packed refs | The new loose ref coexists with the packed refs and matches Git. |
+| `core.logAllRefUpdates=false` | The export writes only the new ref and creates no reflog. |
+| Existing branch, `HEAD`, dash prefix, double dot, space or `.lock` suffix | Refuse with identical repository bytes and zero bridge writes. |
+| Name below an existing branch, unborn HEAD or external ref lock | Refuse with identical repository bytes and zero bridge writes. |
+
+All 6 accepted cases preserve staged, unstaged and untracked file bytes.
+The export writes only the branch ref and its optional reflog. A second export writes zero files.
+All 9 refusals match Git and preserve the index and HEAD.
+Each fixture passes strict fsck after the test removes its external lock, if present.
+
+The Git reference command supplies `HEAD` explicitly, as the JavaScript reflog does.
+Git records the current branch name when its command omits the start point.
+Libgit2's annotated-commit API preserves the explicit `HEAD` text in the reflog.
+The test compares reflog identities, object IDs and messages, but excludes timestamps and time zones.
+
+The baseline passed all 34 tests. The fresh emcc and quine-wasm build passes all 35 tests.
+The syntax check and `git diff --check` passed. No browser or server started.
+The page still uses JavaScript and retains its 3 recorded interface faults.
+Branch checkout and real browser folder handles still need separate proof before a Branch replacement.
+
+The read benchmark used the packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 97.34 |
+| JavaScript Refresh | 79.66 |
+| JavaScript Status | 83.55 |
+| JavaScript Log | 1.03 |
+| JavaScript Tree | 1.31 |
+| JavaScript HEAD and index reads | 3.78 |
+| Wasm instance creation | 10.00 |
+| Folder import | 621.02 |
+| First libgit2 HEAD and index reads | 18.75 |
+| Unchanged bridge export | 97.50 |
+
+These read costs do not measure Branch Create speed. The benchmark ran beside the test suite, so resource contention can affect these times.
+The measured gain is 6 compatible branch results and 9 safe refusals for a new Wasm operation.

@@ -253,6 +253,35 @@ done:
     return rc;
 }
 
+/* Create a branch at HEAD without a checkout. The host supplies /branch-name. */
+EMSCRIPTEN_KEEPALIVE int html_git_branch_create_probe(void)
+{
+    git_repository *repo = NULL;
+    git_annotated_commit *head = NULL;
+    git_reference *branch = NULL;
+    char *name = NULL;
+    size_t capacity = 0;
+    FILE *input = fopen("/branch-name", "r");
+    int rc;
+
+    if (!input) return -1;
+    rc = getdelim(&name, &capacity, '\0', input) > 0 ? 0 : -1;
+    fclose(input);
+    if (rc < 0) { free(name); return rc; }
+    if ((rc = git_libgit2_init()) < 0) { free(name); return rc; }
+    if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    if ((rc = git_annotated_commit_from_revspec(&head, repo, "HEAD")) < 0) goto done;
+    rc = git_branch_create_from_annotated(&branch, repo, name, head, 0);
+
+done:
+    git_reference_free(branch);
+    git_annotated_commit_free(head);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    free(name);
+    return rc;
+}
+
 /* Init test. The host supplies an empty /repo directory. */
 EMSCRIPTEN_KEEPALIVE int html_git_init_probe(void)
 {

@@ -978,3 +978,95 @@ test('libgit2 Commit completes resolved merges with Git and JavaScript results',
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('libgit2 Branch Create matches Git and preserves the index and files', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-branch-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const cases = [
+    { name: 'topic' }, { name: 'feature/topic' }, { name: 'feature/日本語' },
+    { name: 'topic', detached: true }, { name: 'topic', packed: true },
+    { name: 'topic', noLog: true },
+    { name: 'main', refuse: true }, { name: 'HEAD', refuse: true },
+    { name: '-topic', refuse: true }, { name: 'bad..name', refuse: true },
+    { name: 'bad name', refuse: true }, { name: 'topic.lock', refuse: true },
+    { name: 'main/child', refuse: true }, { name: 'topic', unborn: true, refuse: true },
+    { name: 'topic', locked: true, refuse: true },
+  ];
+  try {
+    for (const [i, c] of cases.entries()) {
+      const actual = path.join(root, String(i));
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'user.name', 'Test');
+      git(actual, 'config', 'user.email', 'test@example.com');
+      fs.writeFileSync(path.join(actual, 'file'), 'base\n');
+      git(actual, 'add', 'file');
+      if (!c.unborn) git(actual, 'commit', '-m', 'Base');
+      if (c.detached) git(actual, 'checkout', '--detach');
+      if (c.packed) git(actual, 'pack-refs', '--all');
+      if (c.noLog) git(actual, 'config', 'core.logAllRefUpdates', 'false');
+      if (c.locked) fs.writeFileSync(path.join(actual, '.git/refs/heads/topic.lock'), 'external lock');
+      fs.writeFileSync(path.join(actual, 'file'), 'staged bytes\n');
+      git(actual, 'add', 'file');
+      fs.writeFileSync(path.join(actual, 'file'), 'unstaged bytes\n');
+      fs.writeFileSync(path.join(actual, 'untracked'), 'untracked bytes\n');
+      const reference = actual + '-git';
+      const javascript = actual + '-js';
+      fs.cpSync(actual, reference, { recursive: true });
+      fs.cpSync(actual, javascript, { recursive: true });
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      const before = snapshot(m);
+      m.FS.writeFile('/branch-name', c.name);
+      if (c.refuse) assert.throws(() => git(reference, 'branch', '--', c.name, 'HEAD'));
+      else git(reference, 'branch', '--', c.name, 'HEAD');
+      assert.equal(typeof m._html_git_branch_create_probe, 'function', 'Branch Create export');
+      const rc = m._html_git_branch_create_probe();
+      if (c.refuse) {
+        assert.ok(rc < 0, `${i}: invalid branch must fail`);
+        assert.deepEqual(snapshot(m), before, `${i}: no repository byte change`);
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      } else {
+        assert.equal(rc, 0, `${i}: create branch`);
+        const after = snapshot(m);
+        const changed = Object.keys(after).filter((p) => after[p] !== before[p]);
+        assert.deepEqual(changed.sort(), [
+          '/repo/.git/refs/heads/' + c.name,
+          ...(!c.noLog ? ['/repo/.git/logs/refs/heads/' + c.name] : []),
+        ].sort(), `${i}: only the branch ref and its reflog change`);
+        assert.deepEqual(await bridge.flush(), { filesWritten: c.noLog ? 1 : 2, pathsRemoved: 0 });
+        assert.equal(git(actual, 'show-ref'), git(reference, 'show-ref'));
+        await new (loadCore().Repo)(new NodeFS(javascript)).createBranch(c.name, {
+          ident: { name: 'Test', email: 'test@example.com' },
+        });
+        assert.equal(git(actual, 'show-ref'), git(javascript, 'show-ref'));
+        if (!c.noLog) {
+          const log = (dir) => fs.readFileSync(path.join(dir, '.git/logs/refs/heads', c.name), 'utf8')
+            .replace(/> \d+ [+-]\d{4}\t/g, '> TIME\t');
+          assert.equal(log(actual), log(reference), `${i}: Git reflog`);
+          assert.equal(log(actual), log(javascript), `${i}: JavaScript reflog`);
+        }
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/HEAD')), Buffer.from(before['/repo/.git/HEAD'], 'base64'));
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')), Buffer.from(before['/repo/.git/index'], 'base64'));
+      assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      assert.equal(fs.readFileSync(path.join(actual, 'untracked'), 'utf8'), 'untracked bytes\n');
+      if (c.locked) {
+        const lock = path.join(actual, '.git/refs/heads/topic.lock');
+        assert.equal(fs.readFileSync(lock, 'utf8'), 'external lock');
+        // Remove the fixture lock after the preservation checks, before fsck.
+        fs.unlinkSync(lock);
+      }
+      git(actual, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
