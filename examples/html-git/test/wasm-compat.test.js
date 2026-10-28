@@ -988,6 +988,79 @@ test('libgit2 Commit refuses invalid inputs, empty commits and unsupported state
   }
 });
 
+test('libgit2 Commit cleans supplied messages as Git does', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-message-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_AUTHOR_DATE: '1700000000 +0000', GIT_COMMITTER_DATE: '1700000000 +0000' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const message = '\n\nTitle with café  \t\n\n\n# Comment\n; Custom comment\n Body\t \n\n';
+  const cases = [
+    {}, { mode: 'default' }, { mode: 'whitespace' }, { mode: 'verbatim' },
+    { mode: 'scissors' }, { mode: 'strip' }, { mode: 'strip', comment: ';' },
+    { message: 'No final newline' }, { message: ' \t\n\n', refuse: true },
+    { mode: 'strip', message: '# Comment only\n', refuse: true },
+    { mode: 'verbatim', message: ' \t\n\n' },
+    { mode: 'invalid', refuse: true }, { implicit: true, refuse: true },
+    { mode: 'strip', comment: 'auto', unsupported: true },
+    { mode: 'strip', commentString: '##', unsupported: true },
+    { mode: 'scissors', message: 'Title\n# ------------------------ >8 ------------------------\nKeep this body\n' },
+  ];
+  try {
+    for (const [i, c] of cases.entries()) {
+      const actual = path.join(root, String(i));
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'core.autocrlf', 'false');
+      if (c.mode) git(actual, 'config', 'commit.cleanup', c.mode);
+      if (c.implicit) fs.appendFileSync(path.join(actual, '.git/config'), '\n[commit]\n\tcleanup\n');
+      if (c.commentString) git(actual, 'config', 'core.commentString', c.commentString);
+      if (c.comment) git(actual, 'config', 'core.commentChar', c.comment);
+      fs.writeFileSync(path.join(actual, 'file'), 'staged bytes\n');
+      git(actual, 'add', 'file');
+      fs.writeFileSync(path.join(actual, 'file'), 'unstaged bytes\n');
+      const status = git(actual, 'status', '--porcelain');
+      const reference = actual + '-git';
+      fs.cpSync(actual, reference, { recursive: true });
+      const input = c.message === undefined ? message : c.message;
+      const messageFile = path.join(root, 'message');
+      fs.writeFileSync(messageFile, input);
+      if (c.refuse) assert.throws(() => git(reference, 'commit', '-F', messageFile), /Command failed/);
+      else git(reference, 'commit', '-F', messageFile);
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      const before = snapshot(m);
+      m.FS.writeFile('/commit-message', input);
+      m.FS.writeFile('/commit-signature', 'Test <test@example.com> 1700000000 +0000');
+      const rc = m._html_git_commit_probe();
+      if (c.refuse || c.unsupported) {
+        assert.ok(rc < 0, `${i}: refuse invalid or empty message`);
+        assert.deepEqual(snapshot(m), before);
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      } else {
+        assert.equal(rc, 0, `${i}: commit`);
+        await bridge.flush();
+        assert.equal(git(actual, 'cat-file', 'commit', 'HEAD'), git(reference, 'cat-file', 'commit', 'HEAD'), `${i}: commit bytes`);
+        assert.equal(git(actual, 'rev-parse', 'HEAD'), git(reference, 'rev-parse', 'HEAD'), `${i}: commit ID`);
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+        const payload = git(actual, 'cat-file', 'commit', 'HEAD').split('\n\n').slice(1).join('\n\n');
+        const jsMessage = loadCore().cleanMessage(input);
+        if (c.mode === 'verbatim' || c.mode === 'strip') assert.notEqual(jsMessage, payload);
+        else assert.equal(jsMessage, payload);
+      }
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')), Buffer.from(before['/repo/.git/index'], 'base64'));
+      assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      assert.equal(git(actual, 'status', '--porcelain'), c.unsupported ? status : git(reference, 'status', '--porcelain'));
+      git(actual, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Commit refuses required signatures and invalid signature config before any write', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {

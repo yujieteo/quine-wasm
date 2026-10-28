@@ -1137,3 +1137,59 @@ Each trial checked HEAD and tree IDs against JavaScript.
 | Unchanged bridge export | 60.59 |
 
 The page still uses JavaScript. This run created no commit and started no browser or server.
+
+## Commit message cleanup on 2026-10-28
+
+The Commit probe now cleans supplied messages with libgit2 before any repository write.
+The new test failed against the previous build because the probe retained excess whitespace and produced a different commit ID from Git.
+
+- Apply the configured cleanup mode to a supplied message.
+  Reason: The baseline fixture produced different commit bytes from `git commit -F`.
+- Refuse an empty cleaned message, invalid config or unsupported comment forms before any repository write.
+  Reason: Incorrect cleanup changes commit bytes, while a refused Commit must preserve the repository.
+
+The change removes the earlier whitespace check and uses `git_message_prettify` for cleanup.
+It adds no package, message parser or interface control.
+The test supplies a message without an editor, as the page does.
+
+| Case | Result and evidence |
+| --- | --- |
+| Absent mode, `default` or `whitespace` | Commit bytes and IDs match Git after whitespace cleanup. |
+| `strip` with `#` or a custom `;` comment character | Commit bytes and IDs match Git after comment removal. |
+| `verbatim`, including a whitespace-only message | Commit bytes and IDs match Git with the original message. |
+| `scissors`, including a cut marker | Git preserves the body without an editor. The probe matches Git. |
+| Message without a final newline | The probe adds the newline and matches Git. |
+| Whitespace-only message or comments only with `strip` | Refuse with identical repository bytes and zero disk writes. |
+| Unknown mode or a mode key without a value | Refuse with identical repository bytes and zero disk writes. |
+| `strip` with `core.commentChar=auto` or a multiple-character `core.commentString` | Refuse with identical repository bytes and zero disk writes. |
+
+Libgit2's cleanup API accepts 1 comment byte. It cannot supply Git's automatic or multiple-character comment forms through this call.
+The probe also refuses non-ASCII comment characters with `strip`.
+JavaScript matches the default cleanup but ignores the tested `strip` and `verbatim` modes.
+Thus JavaScript cannot supply a correct fallback for those modes.
+
+All 10 accepted cases preserve Index bytes and unstaged file bytes, match Git status and pass strict fsck.
+A second export writes zero files. All 6 refusals preserve every repository byte and cause zero bridge writes.
+The fresh emcc and quine-wasm build passed all 38 tests without skips.
+The syntax check and `git diff --check` passed. This repository defines no lint or format command.
+The first full run exposed an intermittent Stage status mismatch. The final full run passed without a Stage change.
+
+The separate `test/benchmark.js` run used the packed fixture with 10,001 tracked files and 20 commits after the tests completed.
+Each value is the median of 5 trials, in milliseconds. Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 62.34 |
+| JavaScript Refresh | 54.30 |
+| JavaScript Status | 53.37 |
+| JavaScript Log | 0.42 |
+| JavaScript Tree | 0.53 |
+| JavaScript HEAD and Index reads | 2.21 |
+| Wasm instance creation | 5.66 |
+| Folder import | 297.67 |
+| First libgit2 HEAD and Index reads | 16.20 |
+| Unchanged bridge export | 58.64 |
+
+These read costs do not measure Commit speed. The gain is correct message cleanup and safe refusals in the Wasm probe.
+The page still uses JavaScript. Real browser folder handles and hooks still need proof before a Commit replacement.
+This run created no commit and started no browser or server.

@@ -237,6 +237,35 @@ static int append_merge_parent(const git_oid *oid, void *payload)
     return 0;
 }
 
+/* Match Git's non-editor cleanup for a supplied message. */
+static int clean_commit_message(git_buf *out, git_config *config, const char *message)
+{
+    const char *mode = "default", *comment = "#", *value;
+    int rc, strip = 0;
+
+    rc = git_config_get_string(&value, config, "commit.cleanup");
+    if (rc == 0) mode = value;
+    else if (rc != GIT_ENOTFOUND) return rc;
+    if (!mode) return GIT_EINVALIDSPEC;
+    if (!strcmp(mode, "verbatim")) return 0;
+    if (!strcmp(mode, "strip")) strip = 1;
+    else if (strcmp(mode, "default") && strcmp(mode, "whitespace") && strcmp(mode, "scissors"))
+        return GIT_EINVALIDSPEC;
+    if (strip) {
+        rc = git_config_get_string(&value, config, "core.commentChar");
+        if (rc == 0) comment = value;
+        else if (rc != GIT_ENOTFOUND) return rc;
+        /* Libgit2 accepts one comment byte, not Git's auto or string forms. */
+        rc = git_config_get_string(&value, config, "core.commentString");
+        if (rc == 0) comment = value;
+        else if (rc != GIT_ENOTFOUND) return rc;
+        if (!comment || strlen(comment) != 1 || (unsigned char)comment[0] >= 128)
+            return GIT_EINVALIDSPEC;
+    }
+    if ((rc = git_message_prettify(out, message, strip, comment[0])) < 0) return rc;
+    return out->size ? 0 : GIT_EINVALIDSPEC;
+}
+
 /* Commit staged files. The host supplies a message and a Git signature. */
 EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
 {
@@ -248,6 +277,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     git_commit *parent = NULL;
     git_object *head = NULL;
     git_oid tree_id, commit_id;
+    git_buf cleaned = GIT_BUF_INIT;
     struct commit_parents parents = {0};
     char *message = NULL, *identity = NULL;
     size_t capacity = 0;
@@ -258,7 +288,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if (!input) return -1;
     rc = getdelim(&message, &capacity, '\0', input) > 0 ? 0 : -1;
     fclose(input);
-    if (rc < 0 || message[strspn(message, " \t\r\n")] == '\0') { free(message); return -1; }
+    if (rc < 0) { free(message); return -1; }
     capacity = 0;
     input = fopen("/commit-signature", "r");
     if (!input) { free(message); return -1; }
@@ -275,6 +305,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
         if (rc < 0) goto done;
         if (sign) { rc = GIT_EINVALIDSPEC; goto done; }
     }
+    if ((rc = clean_commit_message(&cleaned, config, message)) < 0) goto done;
     state = git_repository_state(repo);
     if (state != GIT_REPOSITORY_STATE_NONE && state != GIT_REPOSITORY_STATE_MERGE) {
         rc = GIT_EINVALIDSPEC;
@@ -299,7 +330,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if (state != GIT_REPOSITORY_STATE_MERGE && parent && git_oid_equal(&tree_id, git_commit_tree_id(parent))) { rc = GIT_EINVALIDSPEC; goto done; }
     if ((rc = git_tree_lookup(&tree, repo, &tree_id)) < 0) goto done;
     rc = git_commit_create(&commit_id, repo, "HEAD", signature, signature,
-        NULL, message, tree, parents.count, (const git_commit **)parents.items);
+        NULL, cleaned.ptr ? cleaned.ptr : message, tree, parents.count, (const git_commit **)parents.items);
     if (rc == 0 && state == GIT_REPOSITORY_STATE_MERGE) {
         rc = git_repository_state_cleanup(repo);
         /* Libgit2 cleanup omits the AUTO_MERGE ref from Git's ort merge. */
@@ -309,6 +340,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
 done:
     for (size_t i = 0; i < parents.count; i++) git_commit_free(parents.items[i]);
     free(parents.items);
+    git_buf_dispose(&cleaned);
     git_object_free(head);
     git_commit_free(parent);
     git_tree_free(tree);
