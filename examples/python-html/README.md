@@ -3,7 +3,7 @@
 CPython in one portable HTML file. Your scripts, data and notebooks travel inside the file.
 
 Try it with no build: download [docs/python.html](docs/python.html), open it from disk (`file://`), and type Python at the `>>>` prompt.
-For numpy, scipy, pandas and matplotlib, download `python-sci.html` from the [latest release](https://github.com/yujieteo/python-html/releases/latest).
+For numpy, scipy, pandas and matplotlib, download `python-sci.html` from the [python-html 0.1.0 release](https://github.com/yujieteo/quine-wasm/releases/tag/python-html-v0.1.0).
 
 ## Why
 
@@ -22,7 +22,7 @@ python-html links CPython with the quine-wasm CLI, as [nvim-html](../nvim-html/R
 | Page | What it has | Size | Where |
 | --- | --- | --- | --- |
 | `python.html` | CPython 3.14.10, the standard library, numpy 2.4.6 | 29.7 MB | [docs/python.html](docs/python.html) |
-| `python-sci.html` | the same, and scipy 1.18.0, pandas 3.0.2, matplotlib 3.10.8 | 71.1 MB | [releases](https://github.com/yujieteo/python-html/releases/latest) |
+| `python-sci.html` | the same, and scipy 1.18.0, pandas 3.0.2, matplotlib 3.10.8 | 71.1 MB | [release](https://github.com/yujieteo/quine-wasm/releases/tag/python-html-v0.1.0) |
 
 `python-sci.html` is a release asset, because GitHub warns about files larger than 50 MB in a repository.
 
