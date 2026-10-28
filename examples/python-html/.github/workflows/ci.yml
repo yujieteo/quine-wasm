@@ -1,0 +1,29 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - name: Install
+        run: nix develop -c npm ci
+      - name: Build python.html and python-sci.html
+        run: nix develop -c bash scripts/build.sh
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Test in Chromium, Firefox and WebKit
+        run: npx playwright test --reporter list
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pages-and-results
+          path: |
+            build/python.html
+            build/python-sci.html
+            test-results/

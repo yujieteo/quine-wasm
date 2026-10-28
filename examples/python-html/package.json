@@ -1,0 +1,15 @@
+{
+  "name": "python-html",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "quine-wasm": "github:yujieteo/quine-wasm#21d6f08ddbd46fa2fe5dd198a5435e91c7dbb6fa"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
