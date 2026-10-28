@@ -805,7 +805,11 @@ test('libgit2 Commit refuses invalid inputs, empty commits and unsupported state
     await refuse();
     fs.writeFileSync(path.join(root, 'file'), 'new bytes\n');
     git('add', 'file');
-    fs.writeFileSync(path.join(root, '.git/MERGE_HEAD'), git('rev-parse', 'HEAD'));
+    fs.writeFileSync(path.join(root, '.git/MERGE_HEAD'), 'invalid merge head\n');
+    await refuse();
+    fs.writeFileSync(path.join(root, '.git/MERGE_HEAD'), '');
+    await refuse();
+    fs.writeFileSync(path.join(root, '.git/MERGE_HEAD'), git('rev-parse', 'HEAD') + '0'.repeat(40) + '\n');
     await refuse();
     fs.unlinkSync(path.join(root, '.git/MERGE_HEAD'));
     fs.mkdirSync(path.join(root, '.git/rebase-merge'));
@@ -817,6 +821,92 @@ test('libgit2 Commit refuses invalid inputs, empty commits and unsupported state
     await refuse();
     assert.equal(fs.readFileSync(path.join(root, 'file'), 'utf8'), 'new bytes\n');
     git('fsck', '--full', '--strict');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('libgit2 Commit completes resolved merges with Git and JavaScript results', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-merge-commit-'));
+  const date = new Date('2023-11-14T22:13:20Z');
+  const offset = -date.getTimezoneOffset();
+  const zone = (offset < 0 ? '-' : '+') + String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0') +
+    String(Math.abs(offset) % 60).padStart(2, '0');
+  const signature = `Test <test@example.com> 1700000000 ${zone}`;
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_AUTHOR_DATE: `1700000000 ${zone}`, GIT_COMMITTER_DATE: `1700000000 ${zone}` };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    for (const kind of ['resolved', 'unchanged-tree', 'multiple-heads']) {
+      const actual = path.join(root, kind);
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      fs.writeFileSync(path.join(actual, 'file'), 'base\n');
+      git(actual, 'add', 'file');
+      git(actual, 'commit', '-m', 'Base');
+      const third = git(actual, 'commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'Third').trim();
+      git(actual, 'checkout', '-b', 'side');
+      fs.writeFileSync(path.join(actual, 'file'), 'side\n');
+      git(actual, 'commit', '-am', 'Side');
+      const side = git(actual, 'rev-parse', 'HEAD').trim();
+      git(actual, 'checkout', 'main');
+      fs.writeFileSync(path.join(actual, 'file'), 'main\n');
+      git(actual, 'commit', '-am', 'Main');
+      const parent = git(actual, 'rev-parse', 'HEAD').trim();
+      assert.throws(() => git(actual, 'merge', '--no-commit', 'side'), /Command failed/);
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      m.FS.writeFile('/commit-message', 'Merge side\n');
+      m.FS.writeFile('/commit-signature', signature);
+      const before = snapshot(m);
+      assert.ok(m._html_git_commit_probe() < 0, 'unresolved merge must fail');
+      assert.deepEqual(snapshot(m), before);
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      fs.writeFileSync(path.join(actual, 'file'), kind === 'resolved' ? 'resolved\n' : 'main\n');
+      git(actual, 'add', 'file');
+      fs.writeFileSync(path.join(actual, 'file'), 'unstaged bytes\n');
+      if (kind === 'multiple-heads') fs.appendFileSync(path.join(actual, '.git/MERGE_HEAD'), third + '\n');
+      const reference = actual + '-git', javascript = actual + '-js';
+      fs.cpSync(actual, reference, { recursive: true });
+      fs.cpSync(actual, javascript, { recursive: true });
+      const index = fs.readFileSync(path.join(actual, '.git/index'));
+      const module = await loadWasm(artifact);
+      const output = await importFolder(module, new NodeFS(actual));
+      module.FS.writeFile('/commit-message', 'Merge side\n');
+      module.FS.writeFile('/commit-signature', signature);
+      const original = snapshot(module);
+      assert.equal(module._html_git_commit_probe(), 0, kind);
+      const after = snapshot(module);
+      const changed = [...new Set([...Object.keys(original), ...Object.keys(after)])]
+        .filter((p) => original[p] !== after[p]);
+      assert.ok(changed.every((p) => p.startsWith('/repo/.git/')));
+      await output.flush();
+      git(reference, '-c', 'commit.gpgsign=false', 'commit', '--cleanup=verbatim', '-m', 'Merge side');
+      const jsCommit = new (loadCore().Repo)(new NodeFS(javascript)).commit({
+        message: 'Merge side\n', ident: { name: 'Test', email: 'test@example.com' }, date });
+      let result;
+      if (kind === 'multiple-heads') await assert.rejects(jsCommit, /nothing to commit/);
+      else result = await jsCommit;
+      const sha = git(actual, 'rev-parse', 'HEAD').trim();
+      assert.equal(sha, git(reference, 'rev-parse', 'HEAD').trim());
+      if (result) assert.equal(sha, result.sha);
+      const parents = kind === 'multiple-heads' ? `${parent} ${side} ${third}` : `${parent} ${side}`;
+      assert.equal(git(actual, 'show', '-s', '--format=%P'), parents + '\n');
+      assert.equal(git(actual, 'cat-file', 'commit', sha), git(reference, 'cat-file', 'commit', sha));
+      assert.equal(git(actual, 'reflog', '-1', '--format=%H %gs'), git(reference, 'reflog', '-1', '--format=%H %gs'));
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')), index);
+      assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      for (const name of ['MERGE_HEAD', 'MERGE_MSG', 'MERGE_MODE', 'AUTO_MERGE']) {
+        assert.equal(fs.existsSync(path.join(actual, '.git', name)), false, name);
+      }
+      git(actual, 'fsck', '--full', '--strict');
+      assert.deepEqual(await output.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

@@ -762,3 +762,57 @@ Each trial checked HEAD and tree IDs against JavaScript.
 These read costs do not measure Commit speed.
 The measured gain is 4 compatible Commit cases and 7 refusals with no disk writes.
 The syntax check and `git diff --check` passed. No browser or server started.
+
+## Merge Commit probe on 2026-10-28
+
+The Commit probe now completes resolved merges with results that match command-line Git.
+The new fixture failed before this change because the probe refused every merge state.
+The change removes that refusal and uses libgit2 to read merge parents and clear merge state.
+
+- Preserve parent order, commit bytes, reflogs, index bytes and unstaged file bytes.
+  Reason: The merge fixture must detect an incorrect commit or an unrelated file change before an engine replacement.
+- Permit a merge commit whose tree matches HEAD.
+  Reason: The unchanged-tree fixture records a second parent even when the resolution retains the current tree.
+- Refuse unresolved conflicts and invalid merge parents before any repository byte change.
+  Reason: A refused merge must preserve its index, objects, refs and merge state, with zero disk writes.
+- Remove `AUTO_MERGE` after a successful merge commit.
+  Reason: The first merge run exposed this stale ref after libgit2 state cleanup, although Git removes it.
+
+| Case | Result and evidence |
+| --- | --- |
+| Resolved content conflict | Commit ID, parent order, object bytes, status and reflog match Git and JavaScript. |
+| Resolution retains the HEAD tree | The same checks pass despite no tree change. |
+| Multiple merge heads | The commit retains all 3 parents in order and matches Git. JavaScript refuses this fixture. |
+| Unresolved merge | Refuse with identical repository bytes and zero bridge writes. |
+| Malformed, empty or unavailable merge parent | Refuse with identical repository bytes and zero bridge writes. |
+
+Every accepted case preserves index bytes and unstaged file bytes.
+Every accepted case clears `MERGE_HEAD`, `MERGE_MSG`, `MERGE_MODE` and `AUTO_MERGE`, then passes strict fsck.
+The bridge exports only changed files within `.git`. A second export writes zero files.
+The tests use real Git merge conflicts and export results to real disk folders through the adapter.
+Rebase state still requires separate state changes and remains outside this probe.
+The page still uses JavaScript. Real browser folder handles and message cleanup still need proof before an engine replacement.
+The interface retains its 4 recorded faults.
+
+The baseline passed all 32 tests. The fresh emcc and quine-wasm build passes all 33 tests.
+The syntax check and `git diff --check` passed. No browser or server started.
+
+The benchmark used the packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 120.61 |
+| JavaScript Refresh | 115.02 |
+| JavaScript Status | 119.61 |
+| JavaScript Log | 1.20 |
+| JavaScript Tree | 1.79 |
+| JavaScript HEAD and index reads | 4.04 |
+| Wasm instance creation | 13.25 |
+| Folder import | 831.90 |
+| First libgit2 HEAD and index reads | 33.28 |
+| Unchanged bridge export | 133.46 |
+
+These read costs do not measure Commit speed.
+The measured gain is 3 compatible merge commits that the previous probe refused.

@@ -148,6 +148,26 @@ done:
     return rc;
 }
 
+struct commit_parents {
+    git_repository *repo;
+    git_commit **items;
+    size_t count;
+};
+
+static int append_merge_parent(const git_oid *oid, void *payload)
+{
+    struct commit_parents *parents = payload;
+    git_commit *commit = NULL;
+    git_commit **items;
+    int rc = git_commit_lookup(&commit, parents->repo, oid);
+    if (rc < 0) return rc;
+    items = realloc(parents->items, (parents->count + 1) * sizeof(*items));
+    if (!items) { git_commit_free(commit); return -1; }
+    parents->items = items;
+    parents->items[parents->count++] = commit;
+    return 0;
+}
+
 /* Commit staged files. The host supplies a message and a Git signature. */
 EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
 {
@@ -158,11 +178,11 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     git_commit *parent = NULL;
     git_object *head = NULL;
     git_oid tree_id, commit_id;
-    const git_commit *parents[1];
+    struct commit_parents parents = {0};
     char *message = NULL, *identity = NULL;
     size_t capacity = 0;
     FILE *input;
-    int rc, unborn;
+    int rc, unborn, state;
 
     input = fopen("/commit-message", "r");
     if (!input) return -1;
@@ -178,8 +198,11 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if ((rc = git_libgit2_init()) < 0) { free(message); free(identity); return rc; }
     if ((rc = git_signature_from_buffer(&signature, identity)) < 0) goto done;
     if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
-    /* Merge and rebase need separate state transitions. Keep them outside this probe. */
-    if (git_repository_state(repo) != GIT_REPOSITORY_STATE_NONE) { rc = GIT_EINVALIDSPEC; goto done; }
+    state = git_repository_state(repo);
+    if (state != GIT_REPOSITORY_STATE_NONE && state != GIT_REPOSITORY_STATE_MERGE) {
+        rc = GIT_EINVALIDSPEC;
+        goto done;
+    }
     if ((rc = git_repository_index(&index, repo)) < 0) goto done;
     if (git_index_has_conflicts(index)) { rc = GIT_EUNMERGED; goto done; }
     if ((unborn = git_repository_head_unborn(repo)) < 0) { rc = unborn; goto done; }
@@ -188,14 +211,27 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
         if ((rc = git_revparse_single(&head, repo, "HEAD")) < 0) goto done;
         if ((rc = git_commit_lookup(&parent, repo, git_object_id(head))) < 0) goto done;
     }
+    parents.repo = repo;
+    if (parent && (rc = append_merge_parent(git_commit_id(parent), &parents)) < 0) goto done;
+    if (state == GIT_REPOSITORY_STATE_MERGE) {
+        if (unborn) { rc = GIT_EINVALIDSPEC; goto done; }
+        if ((rc = git_repository_mergehead_foreach(repo, append_merge_parent, &parents)) < 0) goto done;
+        if (parents.count < 2) { rc = GIT_EINVALIDSPEC; goto done; }
+    }
     if ((rc = git_index_write_tree(&tree_id, index)) < 0) goto done;
-    if (parent && git_oid_equal(&tree_id, git_commit_tree_id(parent))) { rc = GIT_EINVALIDSPEC; goto done; }
+    if (state != GIT_REPOSITORY_STATE_MERGE && parent && git_oid_equal(&tree_id, git_commit_tree_id(parent))) { rc = GIT_EINVALIDSPEC; goto done; }
     if ((rc = git_tree_lookup(&tree, repo, &tree_id)) < 0) goto done;
-    parents[0] = parent;
     rc = git_commit_create(&commit_id, repo, "HEAD", signature, signature,
-        NULL, message, tree, parent ? 1 : 0, parents);
+        NULL, message, tree, parents.count, (const git_commit **)parents.items);
+    if (rc == 0 && state == GIT_REPOSITORY_STATE_MERGE) {
+        rc = git_repository_state_cleanup(repo);
+        /* Libgit2 cleanup omits the AUTO_MERGE ref from Git's ort merge. */
+        if (rc == 0 && remove("/repo/.git/AUTO_MERGE") < 0 && errno != ENOENT) rc = -1;
+    }
 
 done:
+    for (size_t i = 0; i < parents.count; i++) git_commit_free(parents.items[i]);
+    free(parents.items);
     git_object_free(head);
     git_commit_free(parent);
     git_tree_free(tree);
