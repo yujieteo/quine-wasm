@@ -6,10 +6,10 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-/* Wasm cannot execute external clean or process commands. */
-static int check_external_filter(git_repository *repo, const char *path)
+/* Libgit2 omits encoding conversion and external filter commands. */
+static int check_stage_attributes(git_repository *repo, const char *path)
 {
-    const char *filter;
+    const char *filter, *encoding;
     const char *commands[] = { "clean", "process" };
     git_config *config = NULL;
     git_config_entry *entry = NULL;
@@ -23,6 +23,8 @@ static int check_external_filter(git_repository *repo, const char *path)
     rc = stat(fullpath, &st);
     free(fullpath);
     if (rc < 0) return errno == ENOENT ? 0 : -1;
+    if ((rc = git_attr_get(&encoding, repo, 0, path, "working-tree-encoding")) < 0) return rc;
+    if (GIT_ATTR_HAS_VALUE(encoding)) return GIT_EINVALIDSPEC;
     if ((rc = git_attr_get(&filter, repo, 0, path, "filter")) < 0) return rc;
     if (!GIT_ATTR_HAS_VALUE(filter)) return 0;
     if ((rc = git_repository_config_snapshot(&config, repo)) < 0) return rc;
@@ -77,7 +79,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
         if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;
         if (ignored) { rc = GIT_EINVALIDSPEC; goto done; }
     }
-    if ((rc = check_external_filter(repo, path)) < 0) goto done;
+    if ((rc = check_stage_attributes(repo, path)) < 0) goto done;
     rc = git_index_add_bypath(index, path);
     if (rc == GIT_ENOTFOUND && tracked) rc = git_index_remove_bypath(index, path);
     if (rc == 0) rc = git_index_write(index);

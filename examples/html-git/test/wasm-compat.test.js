@@ -413,3 +413,65 @@ test('libgit2 Stage refuses external clean filters before it changes repository 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('libgit2 Stage refuses unsupported working-tree encodings before any repository change', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-stage-encoding-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    git(root, 'init', '-b', 'main');
+    fs.writeFileSync(path.join(root, 'file'), 'old\n');
+    git(root, 'add', 'file');
+    git(root, 'commit', '-m', 'Base');
+    fs.writeFileSync(path.join(root, '.gitattributes'), 'file working-tree-encoding=UTF-16LE\n');
+    const bytes = Buffer.from('new\n', 'utf16le');
+    fs.writeFileSync(path.join(root, 'file'), bytes);
+    const reference = path.join(root, 'reference');
+    fs.mkdirSync(reference);
+    fs.cpSync(path.join(root, '.git'), path.join(reference, '.git'), { recursive: true });
+    fs.copyFileSync(path.join(root, '.gitattributes'), path.join(reference, '.gitattributes'));
+    fs.writeFileSync(path.join(reference, 'file'), bytes);
+    git(reference, 'add', 'file');
+    assert.equal(git(reference, 'show', ':file'), 'new\n', 'Git converts UTF-16LE to UTF-8');
+    const repo = new (loadCore().Repo)(new NodeFS(root));
+    await repo.add(['file']);
+    assert.deepEqual(execFileSync('git', ['show', ':file'], { cwd: root, env }), bytes);
+    assert.notEqual(git(root, 'write-tree'), git(reference, 'write-tree'), 'JavaScript cannot supply a fallback');
+    const m = await loadWasm(artifact);
+    const bridge = await importFolder(m, new NodeFS(root));
+    const before = snapshot(m);
+    m.FS.writeFile('/stage-path', 'file');
+    assert.ok(m._html_git_stage_probe() < 0, 'unsupported encoding must fail');
+    assert.deepEqual(snapshot(m), before, 'refusal preserves index and object bytes');
+    assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    assert.deepEqual(fs.readFileSync(path.join(root, 'file')), bytes);
+
+    // Unset and unspecified attributes require no conversion. Neither does deletion.
+    for (const attribute of ['-working-tree-encoding', '!working-tree-encoding', 'working-tree-encoding=UTF-16LE']) {
+      fs.writeFileSync(path.join(root, '.gitattributes'), `file ${attribute}\n`);
+      fs.writeFileSync(path.join(reference, '.gitattributes'), `file ${attribute}\n`);
+      if (attribute.startsWith('working-tree-encoding=')) {
+        fs.unlinkSync(path.join(root, 'file'));
+        fs.unlinkSync(path.join(reference, 'file'));
+      } else {
+        const content = Buffer.from(attribute + '\n', 'utf16le');
+        fs.writeFileSync(path.join(root, 'file'), content);
+        fs.writeFileSync(path.join(reference, 'file'), content);
+      }
+      const fresh = await loadWasm(artifact);
+      const next = await importFolder(fresh, new NodeFS(root));
+      fresh.FS.writeFile('/stage-path', 'file');
+      assert.equal(fresh._html_git_stage_probe(), 0, attribute);
+      await next.flush();
+      git(reference, 'add', 'file');
+      assert.equal(git(root, 'write-tree'), git(reference, 'write-tree'), attribute);
+      git(root, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

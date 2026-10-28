@@ -492,3 +492,49 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Stage speed.
 The measured gain is a safe refusal where Stage previously reported success with the wrong result.
+
+## Stage encoding fault on 2026-10-28
+
+Stage now refuses an explicit `working-tree-encoding` value before it changes repository bytes.
+The new UTF-16LE fixture failed before this change because the probe reported success.
+Git converts its file bytes to UTF-8 for the blob.
+The pinned libgit2 source contains no `working-tree-encoding` conversion.
+JavaScript preserves the UTF-16LE bytes and produces a different tree from Git.
+Thus JavaScript cannot supply a correct fallback for this file.
+
+- Refuse a selected file with an explicit `working-tree-encoding` value.
+  Reason: The UTF-16LE fixture exposed success from Stage without the required conversion.
+
+The check uses the existing attribute check before the index add.
+It adds no package, conversion code or interface control.
+The refusal preserves every repository byte in MEMFS, exports zero files and preserves the file bytes on disk.
+Explicitly unset and unspecified attributes still permit Stage.
+Deletion still permits Stage because it needs no conversion.
+These 3 accepted cases match Git trees and pass strict fsck.
+The fixture changes file bytes for each accepted case so Git cannot skip the read through its index stat cache.
+
+The baseline passed all 26 tests. The new fixture failed before the change and passed after the change.
+The emcc and quine-wasm build passed. All 27 tests passed with an explicit Wasm artifact path.
+The syntax check and `git diff --check` passed.
+No browser or server started. The application engine and its 4 interface faults stay unchanged.
+Built-in line conversions and real browser folder handles still need checks before an engine replacement.
+
+The separate benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 113.71 |
+| JavaScript Refresh | 105.54 |
+| JavaScript Status | 105.33 |
+| JavaScript Log | 0.87 |
+| JavaScript Tree | 1.02 |
+| JavaScript HEAD and index reads | 3.86 |
+| Wasm instance creation | 9.91 |
+| Folder import | 598.82 |
+| First libgit2 HEAD and index reads | 29.38 |
+| Unchanged bridge export | 114.33 |
+
+These read costs do not measure Stage speed.
+The measured gain is a safe refusal for an unsupported conversion that Stage previously accepted.
