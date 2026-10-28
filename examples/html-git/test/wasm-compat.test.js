@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { loadCore, NodeFS } = require('./load-core');
 const { loadWasm, copyToMemfs, snapshot } = require('./load-wasm');
+const { importFolder } = require('../wasm/folder-bridge');
 const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm-build/probe.html');
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
@@ -22,23 +23,23 @@ test('libgit2 Init survives shutdown and produces a repository Git can use', {
   try {
     fs.writeFileSync(path.join(root, 'file.txt'), 'Keep this file.\n');
     const m = await loadWasm(artifact);
-    copyToMemfs(m, root);
+    const disk = new NodeFS(root);
+    const writes = [];
+    const writeFile = disk.writeFile.bind(disk);
+    disk.writeFile = async (p, bytes) => { writes.push(p); await writeFile(p, bytes); };
+    const bridge = await importFolder(m, disk);
     assert.equal(m._html_git_init_probe(), 0);
     const initialized = snapshot(m);
     for (let n = 0; n < 4; n++) {
       assert.equal(m._html_git_init_probe(), 0, 'Init and shutdown can repeat');
       assert.deepEqual(snapshot(m), initialized, 'reinit preserves repository bytes');
     }
-    // Export the fixture, with empty directories, for command-line Git checks.
-    function exportDir(rel = '') {
-      fs.mkdirSync(path.join(root, rel), { recursive: true });
-      for (const name of m.FS.readdir('/repo/' + rel).filter((n) => n !== '.' && n !== '..')) {
-        const child = rel ? rel + '/' + name : name;
-        if (m.FS.isDir(m.FS.stat('/repo/' + child).mode)) exportDir(child);
-        else fs.writeFileSync(path.join(root, child), m.FS.readFile('/repo/' + child));
-      }
-    }
-    exportDir();
+    const result = await bridge.flush();
+    assert.equal(result.filesWritten, writes.length);
+    assert.ok(writes.length > 0);
+    assert.ok(writes.every((p) => p.startsWith('.git/')));
+    assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    assert.ok(fs.statSync(path.join(root, '.git/refs/heads')).isDirectory());
     assert.equal(fs.readFileSync(path.join(root, 'file.txt'), 'utf8'), 'Keep this file.\n');
     assert.equal(git('symbolic-ref', 'HEAD').trim(), 'refs/heads/main');
     assert.equal(git('config', '--bool', 'core.bare').trim(), 'false');
@@ -116,6 +117,55 @@ test('libgit2 quine probe matches Git and JavaScript without repository writes',
     assert.equal(store.length, 1, 'store holds system data only');
     assert.equal(store[0].title, '$:/quine/system');
     assert.match(html, /LINKING EXCEPTION/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('folder bridge writes only changed bytes and refuses external edits before any write', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-bridge-'));
+  try {
+    const disk = new NodeFS(root);
+    await disk.mkdir('empty');
+    await disk.writeFile('keep', new Uint8Array([0, 255, 1]));
+    await disk.writeFile('edit', 'old');
+    await disk.writeFile('remove/child', 'old');
+    const m = await loadWasm(artifact);
+    const bridge = await importFolder(m, disk);
+    assert.ok(m.FS.isDir(m.FS.stat('/repo/empty').mode));
+    assert.deepEqual(Array.from(m.FS.readFile('/repo/keep')), [0, 255, 1]);
+    const keepTime = fs.statSync(path.join(root, 'keep')).mtimeMs;
+    m.FS.writeFile('/repo/edit', 'new');
+    m.FS.unlink('/repo/remove/child');
+    m.FS.rmdir('/repo/remove');
+    m.FS.mkdir('/repo/new');
+    m.FS.writeFile('/repo/new/binary', new Uint8Array([255, 0]));
+    assert.deepEqual(await bridge.flush(), { filesWritten: 2, pathsRemoved: 2 });
+    assert.equal(fs.statSync(path.join(root, 'keep')).mtimeMs, keepTime);
+    assert.equal(fs.existsSync(path.join(root, 'remove')), false);
+    assert.equal(fs.readFileSync(path.join(root, 'edit'), 'utf8'), 'new');
+    assert.deepEqual(Array.from(fs.readFileSync(path.join(root, 'new/binary'))), [255, 0]);
+    m.FS.writeFile('/repo/edit', 'Wasm edit');
+    m.FS.writeFile('/repo/keep', 'Wasm edit');
+    await disk.writeFile('keep', 'external edit');
+    await assert.rejects(bridge.flush(), /changed outside Wasm/);
+    assert.equal(fs.readFileSync(path.join(root, 'edit'), 'utf8'), 'new');
+    assert.equal(fs.readFileSync(path.join(root, 'keep'), 'utf8'), 'external edit');
+    await assert.rejects(importFolder(m, disk), /fresh Wasm instance/);
+    // New disk files must survive a Wasm folder removal.
+    const fresh = await loadWasm(artifact);
+    const next = await importFolder(fresh, disk);
+    fresh.FS.unlink('/repo/new/binary');
+    fresh.FS.rmdir('/repo/new');
+    await disk.writeFile('new/external', 'keep');
+    await assert.rejects(next.flush(), /changed outside Wasm/);
+    assert.equal(fs.existsSync(path.join(root, 'new/binary')), true);
+    assert.equal(fs.readFileSync(path.join(root, 'new/external'), 'utf8'), 'keep');
+    const html = fs.readFileSync(artifact, 'utf8');
+    assert.ok(html.includes('host.HtmlGitFolderBridge = { importFolder }'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

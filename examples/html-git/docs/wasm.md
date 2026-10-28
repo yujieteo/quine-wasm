@@ -3,7 +3,7 @@
 The first libgit2 build works through quine-wasm, but `index.html` still uses the JavaScript engine.
 The build produces `data/wasm-build/probe.html` as 1 offline HTML file.
 This probe establishes the build path before an engine replacement.
-It does not supply the folder bridge or change the interface.
+It includes a folder bridge for adapter tests. It does not change the interface.
 
 ## Scope after review
 
@@ -25,7 +25,7 @@ Thus the initial store contains only its system entry.
 The read probe reads repository bytes. It writes only `/probe-result`.
 The Init probe creates a repository at `/repo` in MEMFS.
 Its test exports that fixture to disk for command-line Git checks.
-The page does not yet call this operation or write through browser folder handles.
+The page does not yet call this operation. The adapter test exports Init through the folder bridge.
 
 Manual steps first tested the compiler, then the build, then Chrome.
 The automated test now repeats the repository checks.
@@ -178,3 +178,70 @@ They do not establish a speed change from the stack change.
 
 The application retains its JavaScript Init operation until the browser folder bridge passes compatibility checks.
 This run changes no interface controls. The concept model retains its 4 interface faults.
+
+
+## Folder bridge on 2026-10-28
+
+The probe now includes `HtmlGitFolderBridge.importFolder(module, disk)` in its engine block.
+The bridge uses the same filesystem methods as the page's `HandleFS` adapter.
+The quine store still excludes the real repository.
+The application still uses its JavaScript engine.
+
+- Preserve every folder, including empty folders, in MEMFS.
+  Reason: The packed probe failed without the empty `.git/refs` folder in iteration 4.
+- Export only new or changed file bytes and explicit removals.
+  Reason: The Init test must preserve the project file and avoid a second disk write after an unchanged operation.
+- Check affected disk paths before the first export write.
+  Reason: An external edit must not lose its bytes to an older MEMFS copy.
+
+The caller supplies a fresh Wasm instance and an adapter, then awaits `importFolder`.
+After a successful libgit2 operation, the caller awaits `bridge.flush()`.
+The result reports file writes and path removals.
+A second flush with no MEMFS change returns zero for both counts.
+The bridge rejects a file-to-folder replacement or a folder-to-file replacement.
+The Init operation does not require these replacements.
+
+The bridge keeps imported bytes for exact comparisons.
+It checks external edits only on affected paths. It preserves unrelated disk edits.
+The check and export do not form an atomic disk transaction.
+Another program can change files after the check, and a disk error can leave a partial export.
+The caller must not overlap an export with another repository operation.
+
+The Init compatibility test now exports through the bridge instead of a test-only recursive copy.
+Command-line Git reads its branch and config, makes a commit, and passes strict fsck.
+The test checks 5 Init calls, an unchanged second export, and the empty `.git/refs/heads` folder.
+A second test checks binary bytes, file removal, folder removal, and external edits before any disk write.
+It also checks that an external new file prevents removal of its parent folder.
+
+These tests use `NodeFS`, which supplies the same methods as `HandleFS`.
+They do not establish browser permission behavior or real folder handle behavior.
+The next engine unit is a browser check with real folder handles before the page replaces JavaScript Init.
+The interface and its 4 recorded faults stay unchanged.
+
+### Validation and cost
+
+The emcc and quine-wasm build passed. All 22 tests passed with `HTML_GIT_WASM=data/wasm-build/probe.html npm test`.
+JavaScript syntax checks and `git diff --check` passed. This repository defines no lint or format command.
+No browser or server started in this iteration.
+
+The benchmark used the same packed fixture with 10,000 Files, 20 Commits and 10,178 objects.
+The before and after runs ran separately from the tests. Each value is the median of 5 trials, in milliseconds.
+
+| Step | Before | After |
+| --- | ---: | ---: |
+| JavaScript Open | 309.66 | 280.21 |
+| JavaScript Refresh | 253.10 | 288.31 |
+| JavaScript Status | 341.55 | 251.03 |
+| JavaScript Log | 5.55 | 2.16 |
+| JavaScript Tree | 3.06 | 4.60 |
+| JavaScript HEAD, commit and index reads | 9.42 | 8.30 |
+| Wasm instance creation | 33.14 | 24.80 |
+| Folder import | 1465.02 | 4689.91 |
+| First libgit2 HEAD, commit and index reads | 42.95 | 99.62 |
+| Unchanged bridge export | No bridge | 320.33 |
+
+The old test copy uses synchronous Node reads. The bridge uses asynchronous adapter reads and retains bytes for exact comparisons.
+Thus the new import costs more time. These runs do not establish browser times.
+The unchanged export scans MEMFS but performs zero disk writes.
+Each trial checked HEAD and tree IDs against JavaScript.
+The next browser check must measure import and export separately.

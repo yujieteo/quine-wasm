@@ -3,7 +3,8 @@
 const { performance } = require('node:perf_hooks');
 const { loadCore, NodeFS } = require('./load-core');
 const { execFileSync } = require('node:child_process');
-const { loadWasm, copyToMemfs } = require('./load-wasm');
+const { loadWasm } = require('./load-wasm');
+const { importFolder } = require('../wasm/folder-bridge');
 const assert = require('node:assert/strict');
 const root = process.argv[2];
 if (!root) throw new Error('Usage: node test/benchmark.js <packed-repository>');
@@ -25,8 +26,12 @@ const G = loadCore(process.argv[3]);
     });
     let wasm;
     await measure('wasmInstantiate', async () => { wasm = await loadWasm(process.env.HTML_GIT_WASM); });
-    await measure('wasmCopy', () => copyToMemfs(wasm, root));
+    let bridge;
+    await measure('wasmCopy', async () => { bridge = await importFolder(wasm, new NodeFS(root)); });
     await measure('wasmHeadAndIndex', () => assert.equal(wasm._html_git_probe(), 0));
+    await measure('wasmUnchangedFlush', async () => {
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    });
     const result = wasm.FS.readFile('/probe-result', { encoding: 'utf8' }).split('\n');
     assert.equal(result[0], await repo.resolveRev('HEAD'));
     assert.equal(result[1], (await repo.readCommit(result[0])).tree);
