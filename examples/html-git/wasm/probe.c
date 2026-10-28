@@ -148,6 +148,66 @@ done:
     return rc;
 }
 
+/* Commit staged files. The host supplies a message and a Git signature. */
+EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
+{
+    git_repository *repo = NULL;
+    git_index *index = NULL;
+    git_signature *signature = NULL;
+    git_tree *tree = NULL;
+    git_commit *parent = NULL;
+    git_object *head = NULL;
+    git_oid tree_id, commit_id;
+    const git_commit *parents[1];
+    char *message = NULL, *identity = NULL;
+    size_t capacity = 0;
+    FILE *input;
+    int rc, unborn;
+
+    input = fopen("/commit-message", "r");
+    if (!input) return -1;
+    rc = getdelim(&message, &capacity, '\0', input) > 0 ? 0 : -1;
+    fclose(input);
+    if (rc < 0 || message[strspn(message, " \t\r\n")] == '\0') { free(message); return -1; }
+    capacity = 0;
+    input = fopen("/commit-signature", "r");
+    if (!input) { free(message); return -1; }
+    rc = getdelim(&identity, &capacity, '\0', input) > 0 ? 0 : -1;
+    fclose(input);
+    if (rc < 0) { free(message); free(identity); return rc; }
+    if ((rc = git_libgit2_init()) < 0) { free(message); free(identity); return rc; }
+    if ((rc = git_signature_from_buffer(&signature, identity)) < 0) goto done;
+    if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    /* Merge and rebase need separate state transitions. Keep them outside this probe. */
+    if (git_repository_state(repo) != GIT_REPOSITORY_STATE_NONE) { rc = GIT_EINVALIDSPEC; goto done; }
+    if ((rc = git_repository_index(&index, repo)) < 0) goto done;
+    if (git_index_has_conflicts(index)) { rc = GIT_EUNMERGED; goto done; }
+    if ((unborn = git_repository_head_unborn(repo)) < 0) { rc = unborn; goto done; }
+    if (unborn && !git_index_entrycount(index)) { rc = GIT_EINVALIDSPEC; goto done; }
+    if (!unborn) {
+        if ((rc = git_revparse_single(&head, repo, "HEAD")) < 0) goto done;
+        if ((rc = git_commit_lookup(&parent, repo, git_object_id(head))) < 0) goto done;
+    }
+    if ((rc = git_index_write_tree(&tree_id, index)) < 0) goto done;
+    if (parent && git_oid_equal(&tree_id, git_commit_tree_id(parent))) { rc = GIT_EINVALIDSPEC; goto done; }
+    if ((rc = git_tree_lookup(&tree, repo, &tree_id)) < 0) goto done;
+    parents[0] = parent;
+    rc = git_commit_create(&commit_id, repo, "HEAD", signature, signature,
+        NULL, message, tree, parent ? 1 : 0, parents);
+
+done:
+    git_object_free(head);
+    git_commit_free(parent);
+    git_tree_free(tree);
+    git_signature_free(signature);
+    git_index_free(index);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    free(message);
+    free(identity);
+    return rc;
+}
+
 /* Init test. The host supplies an empty /repo directory. */
 EMSCRIPTEN_KEEPALIVE int html_git_init_probe(void)
 {

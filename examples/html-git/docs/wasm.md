@@ -703,3 +703,62 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Stage speed.
 The measured gain is evidence for 8 compatible cases, with 3 safe refusals that JavaScript lacks.
+
+## Commit probe on 2026-10-28
+
+The new Commit probe records staged files with libgit2 and exports its results through the folder bridge.
+The baseline had no Commit export. The new tests failed because that export did not exist.
+The fresh emcc and quine-wasm build passes all 32 tests, compared with 30 baseline tests.
+
+- Compare commit IDs, reflogs and file bytes with Git and JavaScript.
+  Reason: The Commit compatibility run must detect incorrect objects, refs or file changes before an engine replacement.
+- Refuse merge and rebase states in this probe.
+  Reason: Those operations require state changes that this probe does not implement.
+- Preserve repository bytes after a refused Commit.
+  Reason: An invalid Commit must not change the index, objects or refs on disk.
+
+The host supplies a complete message at `/commit-message` and a Git signature at `/commit-signature`.
+The signature contains the name, email, timestamp and time zone.
+The host supplies the same signature for the author and committer.
+The host must normalize the message before this call, as the JavaScript Commit action does.
+
+| Case | Result and evidence |
+| --- | --- |
+| Root commit | Commit ID, object bytes, status and reflog match Git. JavaScript produces the same ID. |
+| Commit with one parent | The same checks pass. |
+| Detached HEAD | The same checks pass. The branch retains its previous commit. |
+| Commit with an empty tree | The same checks pass after removal of the last staged file. |
+| Empty initial index | Refuse with no repository byte change and zero bridge writes. |
+| Blank message | Refuse with no repository byte change and zero bridge writes. |
+| Invalid signature | Refuse with no repository byte change and zero bridge writes. |
+| Unchanged tree | Refuse with no repository byte change and zero bridge writes. |
+| Merge state | Refuse with no repository byte change and zero bridge writes. |
+| Rebase state | Refuse with no repository byte change and zero bridge writes. |
+| Unmerged index | Refuse with no repository byte change and zero bridge writes. |
+
+Each accepted Commit preserves index bytes and unstaged file bytes.
+Each fixture passes strict fsck. A second bridge export writes no files.
+This probe does not execute hooks or sign commits. It does not replace the JavaScript Commit action.
+Merge, rebase, message cleanup and browser folder handles still need separate proof before that replacement.
+The interface retains its 4 recorded faults.
+
+The benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 82.37 |
+| JavaScript Refresh | 66.54 |
+| JavaScript Status | 58.57 |
+| JavaScript Log | 0.47 |
+| JavaScript Tree | 0.79 |
+| JavaScript HEAD and index reads | 2.09 |
+| Wasm instance creation | 6.27 |
+| Folder import | 406.31 |
+| First libgit2 HEAD and index reads | 18.03 |
+| Unchanged bridge export | 70.87 |
+
+These read costs do not measure Commit speed.
+The measured gain is 4 compatible Commit cases and 7 refusals with no disk writes.
+The syntax check and `git diff --check` passed. No browser or server started.

@@ -708,3 +708,116 @@ test('libgit2 Stage refuses unsupported working-tree encodings before any reposi
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test('libgit2 Commit matches Git and JavaScript for root, parent, detached and empty-tree commits', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-commit-'));
+  const date = new Date('2023-11-14T22:13:20Z');
+  const offset = -date.getTimezoneOffset();
+  const zone = (offset < 0 ? '-' : '+') + String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0') +
+    String(Math.abs(offset) % 60).padStart(2, '0');
+  const signature = `Ada Lovelace <ada@example.com> 1700000000 ${zone}`;
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Ada Lovelace', GIT_AUTHOR_EMAIL: 'ada@example.com',
+    GIT_COMMITTER_NAME: 'Ada Lovelace', GIT_COMMITTER_EMAIL: 'ada@example.com',
+    GIT_AUTHOR_DATE: `1700000000 ${zone}`, GIT_COMMITTER_DATE: `1700000000 ${zone}` };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const dirs = ['wasm', 'git', 'javascript'].map((name) => path.join(root, name));
+    for (const dir of dirs) {
+      fs.mkdirSync(dir);
+      git(dir, 'init', '-b', 'main');
+      git(dir, 'config', 'core.autocrlf', 'false');
+    }
+    const [actual, reference, javascript] = dirs;
+    const G = loadCore();
+    for (const kind of ['root', 'parent', 'detached', 'empty-tree']) {
+      const message = `${kind}: café\n\nBody with <text>.\n`;
+      for (const dir of dirs) {
+        if (kind === 'detached') git(dir, 'checkout', '--detach');
+        if (kind === 'empty-tree') git(dir, 'rm', '-f', 'file');
+        else {
+          fs.writeFileSync(path.join(dir, 'file'), kind + '\n');
+          git(dir, 'add', 'file');
+          fs.writeFileSync(path.join(dir, 'file'), 'unstaged bytes\n');
+        }
+      }
+      const index = fs.readFileSync(path.join(actual, '.git/index'));
+      const branch = kind === 'root' ? null : git(actual, 'rev-parse', 'main');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      m.FS.writeFile('/commit-message', message);
+      m.FS.writeFile('/commit-signature', signature);
+      assert.equal(m._html_git_commit_probe(), 0, kind);
+      await bridge.flush();
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')), index);
+      if (kind === 'detached' || kind === 'empty-tree') assert.equal(git(actual, 'rev-parse', 'main'), branch);
+      const messageFile = path.join(root, 'message');
+      fs.writeFileSync(messageFile, message);
+      git(reference, '-c', 'commit.gpgsign=false', 'commit', '--cleanup=verbatim', '-F', messageFile);
+      const repo = new G.Repo(new NodeFS(javascript));
+      const result = await repo.commit({ message, ident: { name: 'Ada Lovelace', email: 'ada@example.com' }, date });
+      const sha = git(actual, 'rev-parse', 'HEAD').trim();
+      assert.equal(sha, git(reference, 'rev-parse', 'HEAD').trim(), kind + ': Git commit ID');
+      assert.equal(sha, result.sha, kind + ': JavaScript commit ID');
+      assert.equal(git(actual, 'cat-file', 'commit', sha), git(reference, 'cat-file', 'commit', sha));
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.equal(git(actual, 'reflog', '-1', '--format=%H %gs'), git(reference, 'reflog', '-1', '--format=%H %gs'));
+      assert.equal(git(actual, 'reflog', '--format=%H').trim().split('\n').length,
+        git(reference, 'reflog', '--format=%H').trim().split('\n').length);
+      if (kind !== 'empty-tree') assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      git(actual, 'fsck', '--full', '--strict');
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('libgit2 Commit refuses invalid inputs, empty commits and unsupported states without disk writes', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-commit-refuse-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (...args) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const refuse = async (message = 'Commit\n', signature = 'Test <test@example.com> 1700000000 +0000') => {
+    const m = await loadWasm(artifact);
+    const bridge = await importFolder(m, new NodeFS(root));
+    const before = snapshot(m);
+    m.FS.writeFile('/commit-message', message);
+    m.FS.writeFile('/commit-signature', signature);
+    assert.ok(m._html_git_commit_probe() < 0);
+    assert.deepEqual(snapshot(m), before);
+    assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+  };
+  try {
+    git('init', '-b', 'main');
+    await refuse();
+    fs.writeFileSync(path.join(root, 'file'), 'base\n');
+    git('add', 'file');
+    await refuse(' \n\t');
+    await refuse('Commit\n', 'invalid signature');
+    git('commit', '-m', 'Base');
+    await refuse();
+    fs.writeFileSync(path.join(root, 'file'), 'new bytes\n');
+    git('add', 'file');
+    fs.writeFileSync(path.join(root, '.git/MERGE_HEAD'), git('rev-parse', 'HEAD'));
+    await refuse();
+    fs.unlinkSync(path.join(root, '.git/MERGE_HEAD'));
+    fs.mkdirSync(path.join(root, '.git/rebase-merge'));
+    await refuse();
+    fs.rmdirSync(path.join(root, '.git/rebase-merge'));
+    const blob = git('rev-parse', 'HEAD:file').trim();
+    execFileSync('git', ['update-index', '--index-info'], { cwd: root, env,
+      input: `0 ${'0'.repeat(40)}\tfile\n100644 ${blob} 1\tfile\n100644 ${blob} 2\tfile\n100644 ${blob} 3\tfile\n` });
+    await refuse();
+    assert.equal(fs.readFileSync(path.join(root, 'file'), 'utf8'), 'new bytes\n');
+    git('fsck', '--full', '--strict');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
