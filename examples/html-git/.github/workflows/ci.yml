@@ -1,0 +1,21 @@
+# Runs html-git's compatibility tests on every push to main and every pull request:
+# the git engine is loaded out of index.html and checked against the real git command line.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test test/*.test.js
