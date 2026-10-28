@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <errno.h>
 
@@ -280,6 +281,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     git_buf cleaned = GIT_BUF_INIT;
     struct commit_parents parents = {0};
     char *message = NULL, *identity = NULL;
+    const char *encoding = NULL;
     size_t capacity = 0;
     FILE *input;
     int rc, unborn, state, sign;
@@ -306,6 +308,12 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
         if (sign) { rc = GIT_EINVALIDSPEC; goto done; }
     }
     if ((rc = clean_commit_message(&cleaned, config, message)) < 0) goto done;
+    rc = git_config_get_string(&encoding, config, "i18n.commitEncoding");
+    if (rc == GIT_ENOTFOUND) encoding = NULL;
+    else if (rc < 0) goto done;
+    /* Git omits the header for either UTF-8 spelling, regardless of case. */
+    if (encoding && (!strcasecmp(encoding, "utf-8") || !strcasecmp(encoding, "utf8")))
+        encoding = NULL;
     state = git_repository_state(repo);
     if (state != GIT_REPOSITORY_STATE_NONE && state != GIT_REPOSITORY_STATE_MERGE) {
         rc = GIT_EINVALIDSPEC;
@@ -330,7 +338,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if (state != GIT_REPOSITORY_STATE_MERGE && parent && git_oid_equal(&tree_id, git_commit_tree_id(parent))) { rc = GIT_EINVALIDSPEC; goto done; }
     if ((rc = git_tree_lookup(&tree, repo, &tree_id)) < 0) goto done;
     rc = git_commit_create(&commit_id, repo, "HEAD", signature, signature,
-        NULL, cleaned.ptr ? cleaned.ptr : message, tree, parents.count, (const git_commit **)parents.items);
+        encoding, cleaned.ptr ? cleaned.ptr : message, tree, parents.count, (const git_commit **)parents.items);
     if (rc == 0 && state == GIT_REPOSITORY_STATE_MERGE) {
         rc = git_repository_state_cleanup(repo);
         /* Libgit2 cleanup omits the AUTO_MERGE ref from Git's ort merge. */

@@ -1193,3 +1193,52 @@ Each value is the median of 5 trials, in milliseconds. Each trial checked HEAD a
 These read costs do not measure Commit speed. The gain is correct message cleanup and safe refusals in the Wasm probe.
 The page still uses JavaScript. Real browser folder handles and hooks still need proof before a Commit replacement.
 This run created no commit and started no browser or server.
+
+## Commit message encoding on 2026-10-28
+
+The Commit probe now preserves Git's configured message encoding header.
+The baseline test failed because the probe omitted `encoding ISO-8859-1` and produced a different commit ID.
+
+- Pass `i18n.commitEncoding` to libgit2 without a message converter.
+  Reason: The baseline run produced different commit bytes from `git commit -F`.
+- Omit the header for both UTF-8 names, regardless of case.
+  Reason: The compatibility run checks Git's header omission for `UTF-8`, `utf8` and `uTf-8`.
+
+The change replaces the fixed null encoding argument with the configured encoding.
+It adds no package, interface control or message converter.
+The test compares raw commit bytes rather than decoded text.
+
+| Case | Result and evidence |
+| --- | --- |
+| `ISO-8859-1` with Latin-1 bytes | Commit bytes and ID match Git. Message bytes stay unchanged. |
+| `ISO-8859-1` with UTF-8 bytes | Git declares the configured encoding without conversion. The probe matches Git. |
+| `latin1` with Latin-1 bytes | The probe preserves the exact header name and message bytes, as Git does. |
+| Absent encoding, `UTF-8`, `utf8` or `uTf-8` | The probe omits the encoding header, as Git does. |
+| Empty encoding value | The probe preserves Git's empty encoding header. |
+
+All 8 cases match Git's commit bytes, IDs, status and reflogs, and pass strict fsck.
+Each case preserves Index bytes and unstaged file bytes. A second export writes zero files.
+These cases do not test malformed UTF-8 with an absent encoding config.
+The page still uses JavaScript. Real browser folder handles and hooks still need proof before a Commit replacement.
+
+The fresh emcc and quine-wasm build passed all 39 tests without skips.
+The JavaScript syntax check and `git diff --check` passed. This repository defines no lint or format command.
+
+The separate `test/benchmark.js` run used the packed fixture with 10,001 tracked files and 20 commits after the tests completed.
+Each value is the median of 5 trials, in milliseconds. Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 66.49 |
+| JavaScript Refresh | 57.12 |
+| JavaScript Status | 56.53 |
+| JavaScript Log | 0.51 |
+| JavaScript Tree | 0.53 |
+| JavaScript HEAD and Index reads | 2.21 |
+| Wasm instance creation | 5.95 |
+| Folder import | 294.25 |
+| First libgit2 HEAD and Index reads | 16.64 |
+| Unchanged bridge export | 64.10 |
+
+These read costs do not measure Commit speed. The gain is correct Commit bytes for configured encodings.
+This run created no commit and started no browser or server.

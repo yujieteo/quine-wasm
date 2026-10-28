@@ -1061,6 +1061,60 @@ test('libgit2 Commit cleans supplied messages as Git does', {
   }
 });
 
+test('libgit2 Commit preserves configured message encoding and raw message bytes as Git does', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-commit-encoding-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_AUTHOR_DATE: '1700000000 +0000', GIT_COMMITTER_DATE: '1700000000 +0000' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const cases = [
+    { encoding: 'ISO-8859-1', bytes: 'latin1' },
+    { encoding: 'ISO-8859-1' }, { encoding: 'latin1', bytes: 'latin1' },
+    {}, { encoding: 'UTF-8' }, { encoding: 'utf8' }, { encoding: 'uTf-8' },
+    { encoding: '' },
+  ];
+  try {
+    for (const [i, c] of cases.entries()) {
+      const actual = path.join(root, String(i));
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'core.autocrlf', 'false');
+      if (c.encoding !== undefined) git(actual, 'config', 'i18n.commitEncoding', c.encoding);
+      fs.writeFileSync(path.join(actual, 'file'), 'staged bytes\n');
+      git(actual, 'add', 'file');
+      fs.writeFileSync(path.join(actual, 'file'), 'unstaged bytes\n');
+      const reference = actual + '-git';
+      fs.cpSync(actual, reference, { recursive: true });
+      const message = Buffer.from('Title: café\n\nBody: déjà vu.\n', c.bytes || 'utf8');
+      const messageFile = path.join(root, 'message');
+      fs.writeFileSync(messageFile, message);
+      git(reference, 'commit', '-F', messageFile);
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      const before = snapshot(m);
+      m.FS.writeFile('/commit-message', message);
+      m.FS.writeFile('/commit-signature', 'Test <test@example.com> 1700000000 +0000');
+      assert.equal(m._html_git_commit_probe(), 0, `${i}: commit`);
+      await bridge.flush();
+      const commit = git(actual, 'cat-file', 'commit', 'HEAD');
+      assert.deepEqual(commit, git(reference, 'cat-file', 'commit', 'HEAD'), `${i}: commit bytes`);
+      assert.deepEqual(git(actual, 'rev-parse', 'HEAD'), git(reference, 'rev-parse', 'HEAD'), `${i}: commit ID`);
+      assert.ok(commit.subarray(commit.indexOf('\n\n') + 2).equals(message), `${i}: no byte conversion`);
+      assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')), Buffer.from(before['/repo/.git/index'], 'base64'));
+      assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      assert.deepEqual(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.deepEqual(git(actual, 'reflog', '-1', '--format=%H %gs'), git(reference, 'reflog', '-1', '--format=%H %gs'));
+      git(actual, 'fsck', '--full', '--strict');
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Commit refuses required signatures and invalid signature config before any write', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
