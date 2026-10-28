@@ -263,7 +263,7 @@ fieldset.modes small { color: var(--muted); }
   <div class="card">
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" data-tab="init"><span class="cmd">init</span></button>
-      <button role="tab" data-tab="add"><span class="cmd">add</span></button>
+      <button role="tab" data-tab="add"><span class="cmd">Files</span></button>
       <button role="tab" data-tab="commit"><span class="cmd">commit</span></button>
       <button role="tab" data-tab="diff"><span class="cmd">diff</span></button>
       <button role="tab" data-tab="stash"><span class="cmd">stash</span></button>
@@ -283,13 +283,16 @@ fieldset.modes small { color: var(--muted); }
     </section>
 
     <section class="panel" data-panel="add" hidden>
-      <p>Select files to stage (<code>git add</code>). Deleted files are staged as removals.</p>
+      <p>Select files to Stage or Unstage. Stage uses file changes. Unstage uses staged changes and keeps file content.</p>
       <table class="files">
         <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
         <thead><tr><th><input type="checkbox" id="selectFiles" aria-label="Select all files"></th><th>XY</th><th>Path</th><th>State</th></tr></thead>
         <tbody id="fileRows"></tbody>
       </table>
-      <div class="row"><button class="primary" id="addBtn">git add selected</button></div>
+      <div class="row">
+        <button class="primary" id="addBtn">Stage selected</button>
+        <button id="unstageBtn">Unstage selected</button>
+      </div>
     </section>
 
     <section class="panel" data-panel="commit" hidden>
@@ -365,7 +368,7 @@ fieldset.modes small { color: var(--muted); }
 
     <section class="panel" data-panel="merge" hidden>
       <p>Merge another branch into the current one (<code>git merge</code>). Fast-forwards when possible, otherwise creates a merge commit.
-        Conflicts stop the merge: fix the files, stage them with <b>add</b>, then <b>commit</b>.</p>
+        Conflicts stop the merge: fix the files, stage them in <b>Files</b>, then <b>commit</b>.</p>
       <div id="mergeState"></div>
       <div class="row">
         <select id="mergeFrom" style="flex:1; min-width:160px"></select>
@@ -403,10 +406,6 @@ fieldset.modes small { color: var(--muted); }
         <label><input type="radio" name="resetMode" value="hard"> <span><b>--hard</b> <small>move the branch and make the index and files match it; <b>uncommitted changes to tracked files are lost</b></small></span></label>
       </fieldset>
       <div class="row"><button class="primary" id="resetBtn">git reset</button></div>
-      <h3>Unstage files</h3>
-      <p>Take files out of the index without touching them on disk (<code>git reset -- &lt;file&gt;</code>).</p>
-      <ul class="plain" id="unstageList"></ul>
-      <div class="row"><button id="unstageBtn">git reset -- selected</button></div>
     </section>
 
 
@@ -2710,17 +2709,17 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     $('repoInfo').replaceChildren(...info);
 
     // add
-    state.sel = new Set(st.entries.filter((e) => e.y !== ' ' || e.x === 'U').map((e) => e.path));
-    $('selectFiles').checked = st.entries.length > 0 && state.sel.size === st.entries.length;
+    state.sel = new Set(st.entries.map((e) => e.path));
     if (st.entries.length) drawRows($('fileRows'), st.entries, (e) => el('tr', {},
-      el('td', {}, el('input', { type: 'checkbox', 'data-path': e.path, checked: state.sel.has(e.path) })),
+      el('td', {}, el('input', { type: 'checkbox', 'data-path': e.path, 'aria-label': `Select ${e.path}`, checked: state.sel.has(e.path) })),
       el('td', { class: 'xy ' + xyClass(e) }, e.x + e.y), el('td', { class: 'path' }, e.path), el('td', {}, describe(e))),
     (...more) => el('tr', {}, el('td', { colspan: 4, class: 'empty' }, ...more)), () => state.sel);
-    else $('fileRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'empty' }, 'nothing to add — working tree clean')));
+    else $('fileRows').replaceChildren(el('tr', {}, el('td', { colspan: 4, class: 'empty' }, 'No file changes.')));
+    updateFileSelection();
 
     // commit
     if (staged.length) drawRows($('stagedList'), staged, (e) => el('li', {}, el('span', { class: 'xy ' + xyClass(e) }, e.x), el('span', { class: 'name' }, e.path)), (...more) => el('li', { class: 'empty' }, ...more));
-    else $('stagedList').replaceChildren(el('li', { class: 'empty' }, st.merging ? 'no content changes staged (merge commit)' : 'nothing staged — use the add tab'));
+    else $('stagedList').replaceChildren(el('li', { class: 'empty' }, st.merging ? 'no content changes staged (merge commit)' : 'nothing staged — use the Files tab'));
     const unresolved = st.entries.filter((e) => e.x === 'U').map((e) => e.path);
     if (st.merging) {
       $('mergeNotice').replaceChildren(el('div', { class: 'notice warn' }, unresolved.length
@@ -2766,18 +2765,10 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
       $('rebaseState').replaceChildren(el('div', { class: 'notice warn' },
         el('b', {}, `Rebasing ${rb.headName.replace(/^refs\/heads\//, '')} onto ${short(rb.onto)} (${done}/${total}). `),
         rb.stopped ? `Stopped at ${short(rb.stopped)} "${stopped}". ` : '',
-        unresolved.length ? `Conflicted files: ${unresolved.join(', ')}. Edit them, stage them with add, then continue.`
-          : 'Conflicts resolved? Stage the files with add, then continue. Skip drops this commit; abort goes back to where you started.',
+        unresolved.length ? `Conflicted files: ${unresolved.join(', ')}. Edit them, stage them in Files, then continue.`
+          : 'Conflicts resolved? Stage the files in Files, then continue. Skip drops this commit; abort goes back to where you started.',
         rb.unsupported ? el('div', {}, `This rebase was started by command-line git with an instruction html-git does not support (${rb.unsupported}); only abort is available here.`) : null));
     } else $('rebaseState').replaceChildren();
-
-    // reset
-    const unstage = [...staged, ...st.entries.filter((e) => e.x === 'U')];
-    state.unsel = new Set(unstage.map((e) => e.path));
-    if (unstage.length) drawRows($('unstageList'), unstage, (e) => el('li', {},
-      el('input', { type: 'checkbox', 'data-path': e.path, checked: state.unsel.has(e.path) }), el('span', { class: 'xy ' + xyClass(e) }, e.x), el('span', { class: 'name' }, e.path)),
-    (...more) => el('li', { class: 'empty' }, ...more), () => state.unsel);
-    else $('unstageList').replaceChildren(el('li', { class: 'empty' }, 'nothing staged'));
 
     // log / tree
     const prevLog = $('logFrom').value;
@@ -2818,7 +2809,12 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     box.append(last(note, el('button', { class: 'small', onclick: () => drawRows(box, items, row, last, sel, end) }, `Show ${Math.min(rest, ROWS)} more`)));
   }
   // The selections are kept in sets, so they also hold the rows that are not drawn.
-  const toggle = (set) => (event) => { const p = event.target.dataset.path; if (p) { if (event.target.checked) set().add(p); else set().delete(p); } };
+  function updateFileSelection() {
+    $('selectFiles').checked = state.sel.size > 0 && state.sel.size === state.status.entries.length;
+    $('selectFiles').indeterminate = state.sel.size > 0 && state.sel.size < state.status.entries.length;
+    for (const c of $('fileRows').querySelectorAll('input[type=checkbox]')) c.checked = state.sel.has(c.dataset.path);
+    if ($('fileRows').note) $('fileRows').note();
+  }
   const pathArgs = (paths) => (paths.length > 10 ? `<${paths.length} paths>` : paths.map((p) => (/\s/.test(p) ? JSON.stringify(p) : p)).join(' '));
 
   function refPill(label) {
@@ -2952,11 +2948,14 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
   $('refreshBtn').onclick = () => run(null, async () => {});
   $('selectFiles').onchange = (event) => {
     state.sel = new Set(event.target.checked ? state.status.entries.map((e) => e.path) : []);
-    for (const c of $('fileRows').querySelectorAll('input[type=checkbox]')) c.checked = event.target.checked;
-    if ($('fileRows').note) $('fileRows').note();
+    updateFileSelection();
   };
-  $('fileRows').onchange = toggle(() => state.sel);
-  $('unstageList').onchange = toggle(() => state.unsel);
+  $('fileRows').onchange = (event) => {
+    const p = event.target.dataset.path;
+    if (!p) return;
+    if (event.target.checked) state.sel.add(p); else state.sel.delete(p);
+    updateFileSelection();
+  };
 
   $('initBtn').onclick = () => {
     const branch = $('initBranch').value.trim() || 'main';
@@ -2967,8 +2966,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     });
   };
   $('addBtn').onclick = () => {
-    const paths = state.status.entries.map((e) => e.path).filter((p) => state.sel.has(p));
-    if (!paths.length) { log('select at least one file to add', 'err'); return; }
+    const paths = state.status.entries.filter((e) => state.sel.has(e.path) && (e.y !== ' ' || e.x === 'U')).map((e) => e.path);
+    if (!paths.length) { log('Select at least 1 file with changes to Stage.', 'err'); return; }
     run(`git add ${pathArgs(paths)}`, async () => {
       const done = await state.repo.add(paths);
       const removed = done.filter((d) => d.action !== 'add').length;
@@ -3034,7 +3033,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
       log(`Successfully rebased and updated ${r.branch ? 'refs/heads/' + r.branch : 'detached HEAD'} (${r.picked.length} commit${r.picked.length === 1 ? '' : 's'} replayed, now at ${short(r.sha)}).`, 'ok');
     } else {
       for (const c of r.conflicts) log(`CONFLICT (${c.reason}): ${c.path}`, 'err');
-      log(`Could not apply ${short(r.stopped)}... ${r.subject} (${r.step}/${r.total})\nResolve the conflicts, stage the files with add, then use rebase --continue (or --skip / --abort).`, 'err');
+      log(`Could not apply ${short(r.stopped)}... ${r.subject} (${r.step}/${r.total})\nResolve the conflicts, stage the files in Files, then use rebase --continue (or --skip / --abort).`, 'err');
       selectTab('add');
     }
   };
@@ -3065,8 +3064,8 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     });
   };
   $('unstageBtn').onclick = () => {
-    const paths = [...state.unsel];
-    if (!paths.length) { log('select at least one file to unstage', 'err'); return; }
+    const paths = state.status.entries.filter((e) => state.sel.has(e.path) && e.x !== ' ' && e.x !== '?').map((e) => e.path);
+    if (!paths.length) { log('Select at least 1 file with staged changes to Unstage.', 'err'); return; }
     run(`git reset -- ${pathArgs(paths)}`, async () => {
       const done = await state.repo.resetPaths(paths);
       const kept = done.filter((d) => d.action !== 'reset').length;

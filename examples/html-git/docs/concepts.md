@@ -1,8 +1,8 @@
 # html-git concepts
 
-This document defines the current objects and records a decrease from 7 faults to 5.
-Phase 1 is complete. Phase 2 has a baseline. Phase 3 has not started.
-Iteration 2 adds root Commit comparison and uses Compare for Commit and Stash controls.
+This document defines the current objects and records a decrease from 7 faults to 4.
+Phase 1 is complete. Phase 2 has 4 faults. Phase 3 has not started.
+Iteration 3 puts Stage and Unstage beside one File list. Iteration 2 added consistent Commit and Stash comparison.
 
 ## Scope and evidence
 
@@ -66,7 +66,7 @@ Reset and Restore finish in one operation and do not require separate concepts.
 | Object | Relationships and cardinality | Calls to action | Attributes | Current code |
 | --- | --- | --- | --- | --- |
 | Repository | The page selects 0 or 1 folder. A repository has 1 Index and 0 or more Files, Commits, Branches and Stashes. | Open, Initialize, Refresh. | Folder name, repository state, HEAD, current branch, counts and origin URL. | `Repo`, `HandleFS`, `openHandle`, `repoInfo`. |
-| File | A path has 0 or 1 current file and 0 or more Index conflict entries. Each Commit tree contains 0 or 1 entry per path. | Stage, Unstage, Restore from Commit. | Path, XY status and content. Existing Index entries also retain mode. | `status().entries`, `fileRows`, `unstageList`, `restoreFilePicker`. |
+| File | A path has 0 or 1 current file and 0 or more Index conflict entries. Each Commit tree contains 0 or 1 entry per path. | Stage, Unstage, Restore from Commit. | Path, XY status and content. Existing Index entries also retain mode. | `status().entries`, `fileRows`, `restoreFilePicker`. |
 | Index | Each repository has 1 Index. Index contains 0 or more path entries. Commit consumes its resolved tree. | Compare with HEAD or files, Commit. | Staged paths, modes, object IDs and conflict stages. | `readIndex`, `stagedList`, `diffMode`, `commitBtn`. |
 | Commit | Each Commit has 1 tree and 0 or more parents. Each Branch names 1 tip, except an unborn branch. | Inspect history, Compare, Restore all paths or selected paths. | ID, subject, message, author, date, parents and ref labels. | `readCommit`, `logList`, `graph`, `showDiff`, `restoreCommit`. |
 | Branch | A repository has 0 or more local Branch refs. HEAD selects 1 Branch or names a detached Commit. | Create, Switch, Merge into current Branch, Rebase current Branch, Reset current Branch. | Name, tip ID and current marker. | `branches`, `branchList`, `mergeFrom`, `rebaseOnto`, `resetTarget`. |
@@ -241,6 +241,105 @@ Viewport emulation produced the required 375 px screenshots. The image dimension
 The screenshot command reported an error after it wrote the emulated images. Image inspection confirmed their content.
 Phase 3 has not started because Phase 2 still has faults. No Phase 3 check has a pass result.
 The browser session stopped after the run.
+
+## Phase 2: State after iteration 3
+
+The fault count fell from 5 to 4. Phase 2 stays incomplete.
+The Files view now gives Stage and Unstage the same File list and selection.
+The reset view now contains only Branch Reset.
+
+### Requirements after review
+
+- Put Stage and Unstage beside the same File list.
+  Reason: The `files-controls` Chrome run confirmed the two locations for opposite File actions, fault I1.
+- Apply each action only to selected Files with the relevant changes.
+  Reason: Unstage on an untracked path causes a pathspec fault in `resetPaths`. Stage must preserve an unrelated staged snapshot.
+- Show a partial selection in the header checkbox.
+  Reason: The first manual check selected one File, but the header showed neither a full nor a partial selection.
+- Preserve selection for paths beyond the first 500 rows.
+  Reason: The `files-controls` run used 503 Files and checked all 503 results for both actions.
+
+The change deletes the second File list, its draw step, its selection set and its event handler.
+It reuses `fileRows`, `drawRows`, `Repo.add` and `Repo.resetPaths`.
+One selection set now serves both actions. Each action filters paths by status before the engine call.
+Stage includes untracked Files, file changes and conflicts. Unstage includes staged changes and conflicts.
+The default selection includes every changed File. The header selects or clears the full list, across all pages.
+Manual checks first covered one File, then a mixed list, then 503 Files.
+A temporary script repeated the checks and exported repository states for command-line Git.
+No new library, dependency, engine operation or permanent test harness is necessary.
+The `git-core` script stays byte-for-byte identical to the version before this change.
+
+### Matrix after the change
+
+This table replaces the File row of the baseline matrix.
+The iteration-2 Compare changes stay in effect. All other cells retain their baseline locations.
+
+| Object | Stage before | Unstage before | Stage after | Unstage after | Fault change |
+| --- | --- | --- | --- | --- | --- |
+| File | add `fileRows` + `addBtn` | reset `unstageList` + `unstageBtn` | Files `fileRows` + `addBtn` | Files `fileRows` + `unstageBtn` | I1 removed. |
+
+The faults that remain are D1, D2, D3 and D4.
+Thus the count is 4 displaced actions, 0 inconsistent actions and 0 expected empty cells.
+The change reduces the number of lists for Stage and Unstage from 2 to 1.
+It reduces the number of selection sets for those actions from 2 to 1.
+The app still has 11 tabs. Files replaces the add label. The other command tabs remain.
+
+### Evidence from the Files run
+
+The Chrome run `files-controls` used `file://` and memory directory handles on 2026-10-28.
+The fixture contained a staged deletion, a new staged File, a partly staged File, a staged edit and an untracked File.
+The run used the page's `HandleFS` adapter. It did not prove real folder access.
+The final repetition used Chrome's offline network mode.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Unstage one partly staged File | Pass | Only `partial.txt` changed from `MM` to ` M`. The other staged Files stayed staged. |
+| Stage one selected File | Pass | `partial.txt` changed from ` M` to `M `. The other Files retained their status. |
+| Unstage the full mixed list | Pass | The deletion became ` D`. The new File became `??`. The untracked File retained its bytes. |
+| Stage the full mixed list | Pass | The deletion became `D `. Every other change became staged. |
+| Empty selection | Pass | The page showed a selection message and preserved the index bytes. |
+| Partial selection | Pass | The header showed its indeterminate state after one File selection. |
+| List with 503 Files | Pass | Both actions affected all 503 paths, although the first page showed only 500. |
+| Reveal and select all | Pass | Show more revealed the last 3 Files. The header selected and cleared all 503 checkboxes. |
+| Clean repository | Pass | The page showed `No file changes.`. The header showed no full or partial selection. |
+| Command-line Git | Pass | Five exported states matched Git for porcelain status, index tree and File bytes. Each state passed strict `git fsck`. |
+| Compatibility suite | Pass | `npm test` passed all 19 tests before and after the change. |
+| Width at 375 px | Pass | Files and reset had `innerWidth = scrollWidth = 375`. The images confirm the width. |
+
+The five exported states were the initial state, selected Unstage, selected Stage, full Unstage and full Stage.
+The Git control used `git reset -- <paths>` and `git add` on a copy of the initial state.
+The check compared `git status --porcelain`, `git write-tree` and File bytes after each action.
+The check also confirmed that the deleted File stayed absent.
+
+The benchmark used the same 10,000-File fixture, 20 Commits and HEAD as iteration 2.
+Foreground Git maintenance completed before the benchmark. Each value is the median of 5 trials, in milliseconds.
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Open | 65.06 | 67.72 |
+| Refresh | 55.59 | 56.86 |
+| Status | 52.78 | 54.93 |
+| Log | 0.44 | 0.53 |
+| Tree | 0.47 | 0.52 |
+
+These results do not establish a speed change. The benchmark excludes DOM work and the engine stays identical.
+
+The screenshots use the app's current CSS and embedded font because this change serves the existing app.
+The screenshots show the same fixture before and after the change at 375 px and 1280 px.
+The narrow reset baseline uses a full-page image to show the former Unstage list below the reset controls.
+
+| Screen | Before, 375 px | After, 375 px | Before, 1280 px | After, 1280 px |
+| --- | --- | --- | --- | --- |
+| File list | [Before](evidence/files/files-before-375.png) | [After](evidence/files/files-after-375.png) | [Before](evidence/files/files-before-1280.png) | [After](evidence/files/files-after-1280.png) |
+| Branch Reset | [Before](evidence/files/reset-before-375.png) | [After](evidence/files/reset-after-375.png) | [Before](evidence/files/reset-before-1280.png) | [After](evidence/files/reset-after-1280.png) |
+
+The screenshot command again reported an error after it wrote the images. Image inspection confirmed the final files and dimensions.
+Navigation reset viewport emulation for two initial captures. Explicit emulation before each replacement produced the required widths.
+Phase 3 has not started because Phase 2 still has 4 faults. These checks do not constitute a Phase 3 pass.
+The browser session stopped after the run.
+The next interface candidate is Branch Merge and Rebase beside the Branch list.
+Reason: Faults D2 and D3 repeat Branch choices in separate tabs.
+The first libgit2 build remains a separate candidate for the engine objective.
 
 ## Engine boundary for a later iteration
 

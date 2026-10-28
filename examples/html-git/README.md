@@ -10,7 +10,7 @@ The page works offline from `file://` with no libraries or CDN requests.
 | Tab | Function |
 | --- | --- |
 | init | Create a repository with an initial branch name. |
-| add | Stage selected files, including deleted files. The header checkbox selects or clears all files. Long lists show 500 rows at a time. |
+| Files | Stage or Unstage selected files. Stage includes deletions. Unstage keeps file content. The header checkbox selects or clears all files. Long lists show 500 rows at a time. |
 | commit | Record staged changes with a message, author name and email. Complete a merge after you resolve conflicts. |
 | diff | Compare the index, files, HEAD or 2 commits. |
 | stash | Save changes to tracked files. Show, apply, pop or drop a stash. |
@@ -19,7 +19,7 @@ The page works offline from `file://` with no libraries or CDN requests.
 | branch | Create or switch branches. |
 | merge | Merge a branch. Abort a merge if necessary. |
 | rebase | Replay commits on another branch. Continue, skip or abort after a conflict. |
-| reset | Move the branch with soft, mixed or hard reset. Unstage selected files. |
+| reset | Move the branch with soft, mixed or hard reset. |
 
 The page does not clone, fetch, pull, push, create tags or do interactive rebase.
 The **Refresh** button reads changes from other programs.
