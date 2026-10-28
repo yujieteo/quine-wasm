@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plyhouse</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4;
+  --accent: #2f5fa7; --warn: #a3471f; --ok: #2c7a3f; --input: #ffffff; --plot-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161615; --panel: #1f1f1d; --ink: #e8e8e3; --muted: #9a9a93; --line: #3a3a36;
+    --accent: #7fa7e6; --warn: #e48a5e; --ok: #6cc183; --input: #262624; --plot-bg: #1a1a19;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161615; --panel: #1f1f1d; --ink: #e8e8e3; --muted: #9a9a93; --line: #3a3a36;
+  --accent: #7fa7e6; --warn: #e48a5e; --ok: #6cc183; --input: #262624; --plot-bg: #1a1a19;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { padding: 16px; border-bottom: 1px solid var(--line); }
+header h1 { margin: 0; font-size: 20px; }
+header p { margin: 4px 0 0; color: var(--muted); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 16px; }
+@media (max-width: 1000px) { main { grid-template-columns: minmax(0, 1fr); } }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0; }
+section.wide { grid-column: 1 / -1; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+h3 { font-size: 14px; margin: 12px 0 6px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { border: 1px solid var(--line); padding: 2px 6px; text-align: right; white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; }
+td.l, th.l { text-align: left; }
+input, select, button { font: inherit; color: var(--ink); background: var(--input); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+input[type=number] { width: 6.5em; }
+input.name { width: 9em; }
+input:disabled { color: var(--muted); }
+button { cursor: pointer; padding: 2px 8px; }
+button:hover { border-color: var(--accent); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.note { color: var(--muted); font-size: 12px; }
+.warn { color: var(--warn); }
+.ok { color: var(--ok); }
+#status { font-weight: 600; }
+#view { width: 100%; height: 420px; display: block; border: 1px solid var(--line); border-radius: 4px; background: var(--plot-bg); touch-action: none; }
+canvas.plot { width: 100%; height: 320px; display: block; border: 1px solid var(--line); border-radius: 4px; background: var(--plot-bg); }
+#legend { width: 100%; height: 34px; display: block; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+@media (max-width: 700px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>plyhouse</h1>
+  <p>Homogenized mechanical and thermal properties of a laminate, laminate analysis, strength and plate response. Units are consistent; the defaults are SI-mm: mm, MPa, N/mm, t/mm³, mJ/(t·K), W/(m·K).</p>
+</header>
+<main>
+<section>
+  <h2>Layup</h2>
+  <div class="row">
+    <label>Example <select id="preset"></select></label>
+    <button id="load-preset">Load</button>
+  </div>
+  <div class="row">
+    <label>Layup code <input id="code" class="name" value="[0/±45/90]s"></label>
+    <label>material <select id="code-mat"></select></label>
+    <label>ply thickness <input id="code-t" type="number" value="0.125" step="any"></label>
+    <button id="apply-code">Apply</button>
+  </div>
+  <p class="note">Ply 1 is at the bottom (z = −h/2). The angle turns the fibre (material axis 1) from x towards y, about z, in degrees.</p>
+  <div class="scroll"><table id="plies"></table></div>
+  <div class="row">
+    <button id="add-ply">Add ply on top</button>
+    <label>Elements through each ply <select id="nel"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+    <span id="status"></span>
+  </div>
+</section>
+<section>
+  <h2>3D view of the cell</h2>
+  <div class="row">
+    <label>Show <select id="field"></select></label>
+    <label id="case-wrap">case <select id="case"></select></label>
+    <label>component <select id="comp"></select></label>
+  </div>
+  <div class="row">
+    <label>Ply gap <input id="gap" type="range" min="0" max="1" step="0.01" value="0.25"></label>
+    <span class="note">Drag to turn, wheel or pinch to zoom.</span>
+  </div>
+  <canvas id="view"></canvas>
+  <canvas id="legend"></canvas>
+</section>
+<section class="wide">
+  <h2>Material library</h2>
+  <p class="note">An isotropic material uses E1, ν12, k1, Xt, Xc and S; the other values follow. Strengths are in the material axes.</p>
+  <div class="scroll"><table id="mats"></table></div>
+  <div class="row"><button id="add-mat">Add material</button></div>
+</section>
+<section>
+  <h2>Homogenized properties (periodic cell)</h2>
+  <p class="note">Computational homogenization: the periodic cell problem through the thickness, 6 strain cases and 3 temperature gradient cases. Valid for a stack that repeats along z.</p>
+  <h3>Engineering constants (mechanical test)</h3>
+  <div class="scroll"><table id="eng3"></table></div>
+  <h3>Effective stiffness C (MPa), Voigt order xx, yy, zz, yz, xz, xy</h3>
+  <div class="scroll"><table id="ceff"></table></div>
+  <h3>Effective compliance S (1/MPa)</h3>
+  <div class="scroll"><table id="seff"></table></div>
+  <h3>Thermal properties</h3>
+  <div class="scroll"><table id="keff"></table></div>
+</section>
+<section>
+  <h2>Classical laminate theory</h2>
+  <p class="note">Plane stress in each ply. The apparent constants are those of a free laminate, from the inverse of ABD.</p>
+  <h3>ABD (N/mm, N, N·mm)</h3>
+  <div class="scroll"><table id="abd"></table></div>
+  <h3>Inverse of ABD</h3>
+  <div class="scroll"><table id="abdi"></table></div>
+  <h3>Engineering constants</h3>
+  <div class="scroll"><table id="lamc"></table></div>
+  <h3>Couplings</h3>
+  <div class="scroll"><table id="coup"></table></div>
+</section>
+<section class="wide">
+  <h2>Load, ply strains and stresses</h2>
+  <div class="row">
+    <label><input type="radio" name="mode" value="0" checked> forces N (N/mm) and moments M (N·mm/mm)</label>
+    <label><input type="radio" name="mode" value="1"> mid-plane strains ε⁰ and curvatures κ (1/mm)</label>
+  </div>
+  <div class="row" id="load-inputs"></div>
+  <div class="scroll"><table id="mid"></table></div>
+  <div class="grid2">
+    <div>
+      <h3>Through-thickness plot</h3>
+      <div class="row">
+        <label>quantity <select id="tt-q"></select></label>
+      </div>
+      <canvas id="tt" class="plot"></canvas>
+    </div>
+    <div>
+      <h3>Ply table (bottom and top of each ply)</h3>
+      <div class="row"><label>axes <select id="ply-axes"><option value="0">global x, y</option><option value="1">material 1, 2</option></select></label></div>
+      <div class="scroll"><table id="plytab"></table></div>
+    </div>
+  </div>
+</section>
+<section class="wide">
+  <h2>Strength</h2>
+  <p class="note">Strength ratio R: the load factor at which the ply fails (R &lt; 1: the ply fails under the applied load). Failure index = 1/R. Tsai-Wu uses F12 = −√(F11 F22)/2. Hashin is the plane-stress form of 1980 with the transverse shear strength Yc/2.</p>
+  <div class="grid2">
+    <div>
+      <h3>Strength ratio of each ply</h3>
+      <div class="scroll"><table id="ratio"></table></div>
+      <h3>First-ply failure</h3>
+      <div class="scroll"><table id="fpf"></table></div>
+      <h3>Last-ply failure by ply discount</h3>
+      <div class="row"><label>criterion <select id="lpf-crit"></select></label></div>
+      <p class="note">A failed ply keeps 10⁻⁶ of its stiffness. The load factor of each failure is the larger of the last one and the new ratio.</p>
+      <div class="scroll"><table id="lpf"></table></div>
+    </div>
+    <div>
+      <h3>First-ply failure envelope</h3>
+      <div class="row">
+        <label>x <select id="env-a"></select></label>
+        <label>y <select id="env-b"></select></label>
+        <label>criterion <select id="env-crit"></select></label>
+      </div>
+      <canvas id="env" class="plot"></canvas>
+      <p class="note">The dot is the applied load. x and y are two different load components.</p>
+    </div>
+  </div>
+</section>
+<section class="wide">
+  <h2>Simply supported rectangular plate</h2>
+  <div class="row">
+    <label>a (along x, mm) <input id="pa" type="number" value="500" step="any"></label>
+    <label>b (along y, mm) <input id="pb" type="number" value="250" step="any"></label>
+  </div>
+  <p class="note">Closed forms for a specially orthotropic plate: D11, D12, D22 and D66 only.</p>
+  <p id="plate-warn" class="warn"></p>
+  <div class="grid2">
+    <div><h3>Buckling under one in-plane load</h3><div class="scroll"><table id="buck"></table></div></div>
+    <div><h3>Natural frequencies</h3><div class="scroll"><table id="freq"></table></div></div>
+  </div>
+</section>
+</main>
+<script>
+@@PLYHOUSE_MODULE@@
+</script>
+<script>
+"use strict";
+// ---- result kinds, as in solver/plyhouse.goose ----
+const R = { CEFF: 0, SEFF: 1, ENG3: 2, KEFF: 3, SCAL: 4, CHMSIG: 5, CHMQ: 6, ABD: 7, ABDI: 8, LAMC: 9,
+  COUP: 10, MID: 11, PLY: 12, Z: 13, RATIO: 14, HMODE: 15, FPF: 16, LPF: 17, LPFSTEP: 18, ENV: 19,
+  PLATE: 20, FREQ: 21 };
+const NENV = 72, NFREQ = 6, BIG = 1e29;
+const STATUS = ["", "no plies", "a ply has a value out of range (the angle must be a number; thickness, moduli, conductivity k3, strengths must be positive)",
+  "a ply stiffness is not positive definite (check the Poisson ratios)", "the cell problem is singular", "the ABD matrix is singular"];
+const CRIT = ["max stress", "max strain", "Tsai-Hill", "Tsai-Wu", "Hashin"];
+const HMODE = ["fibre tension", "fibre compression", "matrix tension", "matrix compression"];
+const VOIGT = ["xx", "yy", "zz", "yz", "xz", "xy"];
+const LOADN = ["Nx", "Ny", "Nxy", "Mx", "My", "Mxy"];
+const LOADE = ["ε⁰x", "ε⁰y", "γ⁰xy", "κx", "κy", "κxy"];
+
+// ---- state ----
+const FIELDS = ["e1", "e2", "e3", "g12", "g13", "g23", "n12", "n13", "n23", "k1", "k2", "k3", "rho", "c", "xt", "xc", "yt", "yc", "s"];
+const LABELS = ["E1", "E2", "E3", "G12", "G13", "G23", "ν12", "ν13", "ν23", "k1", "k2", "k3", "ρ", "c", "Xt", "Xc", "Yt", "Yc", "S"];
+const ISO_INPUT = new Set(["e1", "n12", "k1", "rho", "c", "xt", "xc", "s"]);
+function mat(name, iso, v) { const m = { name, iso }; FIELDS.forEach((f, i) => m[f] = v[i]); return m; }
+const mats = [
+  // T300/5208 (Tsai and Hahn 1980); out-of-plane and thermal values typical.
+  mat("carbon/epoxy", false, [181000, 10300, 10300, 7170, 7170, 3456.4, 0.28, 0.28, 0.49, 7, 0.8, 0.8, 1.6e-9, 1.1e9, 1500, 1500, 40, 246, 68]),
+  // Scotchply 1002 (Tsai and Hahn 1980).
+  mat("glass/epoxy", false, [38600, 8270, 8270, 4140, 4140, 2900, 0.26, 0.26, 0.43, 1.1, 0.35, 0.35, 1.8e-9, 0.9e9, 1062, 610, 31, 118, 72]),
+  // femahoy grid-laminate-cell; strengths typical.
+  mat("aluminium", true, [70000, 0, 0, 0, 0, 0, 0.33, 0, 0, 200, 0, 0, 2.7e-9, 9.0e8, 276, 276, 0, 0, 160]),
+  mat("polymer", true, [3000, 0, 0, 0, 0, 0, 0.38, 0, 0, 0.25, 0, 0, 1.2e-9, 1.5e9, 60, 100, 0, 0, 40]),
+];
+let plies = [];
+const PRESETS = [
+  { name: "carbon/epoxy [0/45/−45/90]s", code: "[0/45/-45/90]s", mat: 0, t: 0.125 },
+  { name: "femahoy laminate cell: aluminium 0.3 + polymer 0.7", plies: [[2, 0, 0.3], [3, 0, 0.7]] },
+  { name: "carbon/epoxy cross-ply [0/90]s", code: "[0/90]s", mat: 0, t: 0.125 },
+  { name: "carbon/epoxy angle-ply [±30]s", code: "[±30]s", mat: 0, t: 0.125 },
+  { name: "carbon/epoxy unsymmetric [0/90]", code: "[0/90]", mat: 0, t: 0.25 },
+  { name: "glass/epoxy [0/±60]s", code: "[0/±60]s", mat: 1, t: 0.2 },
+];
+
+function expand(m) {
+  if (!m.iso) return m;
+  const g = m.e1 / (2 * (1 + m.n12));
+  return { ...m, e2: m.e1, e3: m.e1, g12: g, g13: g, g23: g, n13: m.n12, n23: m.n12, k2: m.k1, k3: m.k1, yt: m.xt, yc: m.xc };
+}
+
+// Parses a layup code such as [0/±45/90]s, [0/90_2]s or [30/-30]2s into angles, bottom first.
+function parseCode(code) {
+  const m = code.trim().match(/^\[([^\]]*)\]\s*(\d*)\s*(s?)$/i);
+  if (!m) return null;
+  let a = [];
+  for (const part of m[1].split("/")) {
+    const p = part.trim().match(/^(±|\+-|-\+|∓)?\s*(-?\d+(?:\.\d+)?)(?:_(\d+))?$/);
+    if (!p) return null;
+    const v = parseFloat(p[2]);
+    const one = p[1] ? (p[1] === "∓" || p[1] === "-+" ? [-v, v] : [v, -v]) : [v];
+    for (let i = 0; i < (p[3] ? +p[3] : 1); i++) a.push(...one);
+  }
+  const rep = m[2] ? +m[2] : 1;
+  let b = [];
+  for (let i = 0; i < rep; i++) b.push(...a);
+  if (m[3]) b = b.concat(b.slice().reverse());
+  return b.length ? b : null;
+}
+
+// ---- module ----
+let M = null;
+const $ = id => document.getElementById(id);
+function fmt(v) {
+  if (!isFinite(v)) return "—";
+  if (Math.abs(v) >= BIG) return "∞";
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  if (a >= 1e6 || a < 1e-3) return v.toExponential(4);
+  return +v.toPrecision(6) + "";
+}
+const res = (k, i = 0, j = 0) => M._res(k, i, j);
+function table(id, head, rows) {
+  let h = "";
+  if (head) h += "<tr>" + head.map((c, i) => `<th class="${i === 0 ? "l" : ""}">${c}</th>`).join("") + "</tr>";
+  for (const r of rows) h += "<tr>" + r.map((c, i) => i === 0 ? `<th class="l">${c}</th>` : `<td>${typeof c === "number" ? fmt(c) : c}</td>`).join("") + "</tr>";
+  $(id).innerHTML = h;
+}
+// A matrix, with round-off (below 1e-12 of its largest term) shown as 0.
+function matrix(id, kind, n, names, rows = names) {
+  const v = rows.map((_, i) => Array.from({ length: n }, (_, j) => res(kind, i, j)));
+  const big = Math.max(...v.flat().map(Math.abs));
+  table(id, [""].concat(names), rows.map((r, i) => [r].concat(v[i].map(x => Math.abs(x) < 1e-12 * big ? 0 : x))));
+}
+
+// ---- editors ----
+function renderMats() {
+  let h = "<tr><th class='l'>name</th><th>isotropic</th>" + LABELS.map(l => `<th>${l}</th>`).join("") + "<th></th></tr>";
+  mats.forEach((m, i) => {
+    const e = expand(m);
+    h += `<tr><td class="l"><input class="name" data-m="${i}" data-f="name" value="${m.name.replace(/"/g, "&quot;")}"></td>`;
+    h += `<td><input type="checkbox" data-m="${i}" data-f="iso" ${m.iso ? "checked" : ""}></td>`;
+    for (const f of FIELDS) {
+      const dis = m.iso && !ISO_INPUT.has(f);
+      h += `<td><input type="number" step="any" data-m="${i}" data-f="${f}" value="${+(+e[f]).toPrecision(8)}" ${dis ? "disabled" : ""}></td>`;
+    }
+    h += `<td><button data-del-mat="${i}" ${mats.length < 2 ? "disabled" : ""} aria-label="remove material">✕</button></td></tr>`;
+  });
+  $("mats").innerHTML = h;
+  for (const id of ["code-mat"]) {
+    const sel = $(id), v = sel.value;
+    sel.innerHTML = mats.map((m, i) => `<option value="${i}">${m.name}</option>`).join("");
+    if (v !== "" && v < mats.length) sel.value = v;
+  }
+}
+$("mats").addEventListener("change", ev => {
+  const t = ev.target, i = +t.dataset.m, f = t.dataset.f;
+  if (f === undefined) return;
+  if (f === "name") mats[i].name = t.value;
+  else if (f === "iso") { if (!t.checked) Object.assign(mats[i], expand(mats[i])); mats[i].iso = t.checked; }
+  else mats[i][f] = parseFloat(t.value);
+  renderMats(); renderPlies(); update();
+});
+$("mats").addEventListener("click", ev => {
+  const d = ev.target.dataset.delMat;
+  if (d === undefined) return;
+  const i = +d;
+  mats.splice(i, 1);
+  for (const p of plies) { if (p.mat === i) p.mat = 0; else if (p.mat > i) p.mat--; }
+  renderMats(); renderPlies(); update();
+});
+$("add-mat").onclick = () => { mats.push({ ...expand(mats[0]), name: "material " + (mats.length + 1), iso: false }); renderMats(); renderPlies(); };
+
+function renderPlies() {
+  let h = "<tr><th class='l'>ply</th><th class='l'>material</th><th>angle (°)</th><th>thickness (mm)</th><th></th></tr>";
+  plies.forEach((p, i) => {
+    h += `<tr><th class="l">${i + 1}${i === 0 ? " bottom" : i === plies.length - 1 ? " top" : ""}</th>`;
+    h += `<td class="l"><select data-p="${i}" data-f="mat">` + mats.map((m, j) => `<option value="${j}" ${j === p.mat ? "selected" : ""}>${m.name}</option>`).join("") + "</select></td>";
+    h += `<td><input type="number" step="any" data-p="${i}" data-f="ang" value="${p.ang}"></td>`;
+    h += `<td><input type="number" step="any" min="0" data-p="${i}" data-f="t" value="${p.t}"></td>`;
+    h += `<td><button data-act="down" data-p="${i}" aria-label="move down" ${i === 0 ? "disabled" : ""}>↓</button> `;
+    h += `<button data-act="up" data-p="${i}" aria-label="move up" ${i === plies.length - 1 ? "disabled" : ""}>↑</button> `;
+    h += `<button data-act="del" data-p="${i}" aria-label="remove ply" ${plies.length < 2 ? "disabled" : ""}>✕</button></td></tr>`;
+  });
+  $("plies").innerHTML = h;
+  $("add-ply").disabled = plies.length >= 64;
+}
+$("plies").addEventListener("input", ev => {
+  const t = ev.target, i = +t.dataset.p, f = t.dataset.f;
+  if (f === undefined) return;
+  plies[i][f] = f === "mat" ? +t.value : parseFloat(t.value);
+  update();
+});
+$("plies").addEventListener("click", ev => {
+  const t = ev.target, a = t.dataset.act, i = +t.dataset.p;
+  if (!a) return;
+  if (a === "del") plies.splice(i, 1);
+  else { const j = a === "up" ? i + 1 : i - 1; [plies[i], plies[j]] = [plies[j], plies[i]]; }
+  renderPlies(); update();
+});
+$("add-ply").onclick = () => { const top = plies[plies.length - 1]; plies.push({ ...top }); renderPlies(); update(); };
+$("apply-code").onclick = () => {
+  const a = parseCode($("code").value);
+  if (!a) { $("status").innerHTML = "<span class='warn'>Layup code not read. Write it as [0/±45/90]s, [0/90_2]s or [30/-30]2s.</span>"; return; }
+  if (a.length > 64) { $("status").innerHTML = "<span class='warn'>A layup has 64 plies or fewer.</span>"; return; }
+  const m = +$("code-mat").value, t = parseFloat($("code-t").value);
+  plies = a.map(ang => ({ mat: m, ang, t }));
+  renderPlies(); update();
+};
+$("preset").innerHTML = PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join("");
+function loadPreset(i) {
+  const p = PRESETS[i];
+  if (p.plies) plies = p.plies.map(([mat, ang, t]) => ({ mat, ang, t }));
+  else {
+    plies = parseCode(p.code).map(ang => ({ mat: p.mat, ang, t: p.t }));
+    $("code").value = p.code; $("code-mat").value = p.mat; $("code-t").value = p.t;
+  }
+  renderPlies(); update();
+}
+$("load-preset").onclick = () => loadPreset(+$("preset").value);
+
+// ---- load inputs and selectors ----
+const load = [[100, 0, 0, 0, 0, 0], [1e-3, 0, 0, 0, 0, 0]];
+function mode() { return +document.querySelector("input[name=mode]:checked").value; }
+function renderLoad() {
+  const m = mode(), names = m ? LOADE : LOADN;
+  $("load-inputs").innerHTML = names.map((n, i) => `<label>${n} <input type="number" step="any" data-l="${i}" value="${load[m][i]}"></label>`).join("");
+}
+$("load-inputs").addEventListener("input", ev => { const i = ev.target.dataset.l; if (i === undefined) return; load[mode()][+i] = parseFloat(ev.target.value) || 0; update(); });
+document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = () => { renderLoad(); update(); });
+function options(id, names, sel = 0) { $(id).innerHTML = names.map((n, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${n}</option>`).join(""); }
+options("lpf-crit", CRIT, 0);
+options("env-crit", CRIT, 3);
+options("env-a", LOADN, 0);
+options("env-b", LOADN, 1);
+function envAxes() {
+  for (const [s, o] of [["env-a", "env-b"], ["env-b", "env-a"]])
+    for (const op of $(s).options) op.disabled = op.value === $(o).value;
+}
+envAxes();
+for (const id of ["env-a", "env-b"]) $(id).addEventListener("input", envAxes);
+const TTQ = [];
+for (const [g, gn] of [[0, "strain"], [1, "stress"], [2, "strain"], [3, "stress"]])
+  for (let c = 0; c < 3; c++) {
+    const ax = g < 2 ? ["x", "y", "xy"][c] : ["1", "2", "12"][c];
+    const sym = g % 2 === 0 ? (c === 2 ? "γ" : "ε") : (c === 2 ? "τ" : "σ");
+    TTQ.push({ off: g * 3 + c, name: `${sym}${ax} (${g < 2 ? "global" : "material"} ${gn})` });
+  }
+options("tt-q", TTQ.map(q => q.name), 3);
+for (const id of ["lpf-crit", "env-crit", "env-a", "env-b", "nel", "pa", "pb"]) $(id).addEventListener("input", update);
+$("tt-q").addEventListener("input", draw2d);
+$("ply-axes").addEventListener("input", renderPlyTable);
+
+// 3D view fields: what colours the plies.
+const FIELD = [
+  { name: "homogenization: stress of a strain case", cases: VOIGT.map(v => "unit strain " + v), comps: VOIGT.map(v => "σ" + v + " (MPa)") },
+  { name: "homogenization: heat flux of a gradient case", cases: ["unit ∂T/∂x", "unit ∂T/∂y", "unit ∂T/∂z"], comps: ["qx", "qy", "qz"] },
+  { name: "laminate: ply stress or strain under the load", cases: null, comps: TTQ.map(q => q.name) },
+  { name: "laminate: strength ratio under the load", cases: null, comps: CRIT },
+  { name: "material only (no colour map)", cases: null, comps: [] },
+];
+options("field", FIELD.map(f => f.name), 0);
+function renderField() {
+  const f = FIELD[+$("field").value];
+  $("case-wrap").style.display = f.cases ? "" : "none";
+  if (f.cases) options("case", f.cases, 0);
+  options("comp", f.comps, 0);
+  $("comp").disabled = !f.comps.length;
+}
+$("field").addEventListener("input", () => { renderField(); draw3d(); });
+$("case").addEventListener("input", draw3d);
+$("comp").addEventListener("input", draw3d);
+$("gap").addEventListener("input", draw3d);
+
+// ---- solve ----
+let ok = false;
+function update() {
+  if (!M) return;
+  M._lam_clear();
+  for (const p of plies) {
+    const m = expand(mats[p.mat]);
+    M._ply_add(p.t, p.ang, ...FIELDS.map(f => +m[f]));
+  }
+  const l = load[mode()];
+  M._set_load(mode(), ...l);
+  M._set_plate(parseFloat($("pa").value), parseFloat($("pb").value));
+  M._set_envelope(+$("env-a").value, +$("env-b").value, +$("env-crit").value);
+  M._set_lpf(+$("lpf-crit").value);
+  const st = M._solve(+$("nel").value);
+  ok = st === 0;
+  $("status").innerHTML = ok ? `<span class="ok">Solved: ${plies.length} plies, h = ${fmt(res(R.SCAL, 2))} mm.</span>` : `<span class="warn">Not solved: ${STATUS[st] || "error " + st}.</span>`;
+  if (ok) renderResults();
+  else {
+    for (const id of ["eng3", "ceff", "seff", "keff", "abd", "abdi", "lamc", "coup", "mid", "plytab", "ratio", "fpf", "lpf", "buck", "freq"]) $(id).innerHTML = "";
+    $("plate-warn").textContent = "";
+  }
+  draw3d(); draw2d();
+}
+
+function renderResults() {
+  const e = i => res(R.ENG3, i);
+  table("eng3", ["", "x", "y", "z"], [
+    ["E (MPa)", e(0), e(1), e(2)],
+    ["G (MPa)", "xy " + fmt(e(3)), "xz " + fmt(e(4)), "yz " + fmt(e(5))],
+    ["ν", "xy " + fmt(e(6)), "xz " + fmt(e(7)), "yz " + fmt(e(8))],
+  ]);
+  matrix("ceff", R.CEFF, 6, VOIGT);
+  matrix("seff", R.SEFF, 6, VOIGT);
+  const kb = Math.max(res(R.KEFF, 0, 0), res(R.KEFF, 1, 1), res(R.KEFF, 2, 2));
+  const k = (i, j) => { const v = res(R.KEFF, i, j); return Math.abs(v) < 1e-12 * kb ? 0 : v; };
+  table("keff", ["", "x", "y", "z"], [
+    ["k x", k(0, 0), k(0, 1), k(0, 2)],
+    ["k y", k(1, 0), k(1, 1), k(1, 2)],
+    ["k z", k(2, 0), k(2, 1), k(2, 2)],
+    ["density ρ", res(R.SCAL, 0), "", ""],
+    ["specific heat c", res(R.SCAL, 1), "", ""],
+    ["areal mass ρh", res(R.SCAL, 3), "", ""],
+  ]);
+  const AB = ["Nx", "Ny", "Nxy", "Mx", "My", "Mxy"], EK = ["ε⁰x", "ε⁰y", "γ⁰xy", "κx", "κy", "κxy"];
+  matrix("abd", R.ABD, 6, EK, AB);
+  matrix("abdi", R.ABDI, 6, AB, EK);
+  const c = i => res(R.LAMC, i);
+  table("lamc", ["", "in-plane", "flexural"], [
+    ["Ex (MPa)", c(0), c(7)], ["Ey (MPa)", c(1), c(8)], ["Gxy (MPa)", c(2), c(9)],
+    ["νxy", c(3), c(10)], ["νyx", c(4), c(11)],
+    ["ηxy,x = a16/a11", Math.abs(c(5)) < 1e-12 ? 0 : c(5), ""], ["ηxy,y = a26/a22", Math.abs(c(6)) < 1e-12 ? 0 : c(6), ""],
+  ]);
+  const cp = i => res(R.COUP, i), flag = i => cp(5 + i) ? "<span class='warn'>yes</span>" : "no";
+  table("coup", ["coupling", "present", "size"], [
+    ["extension-bending (B)", flag(0), "max|Bij| / (h max(A11, A22)) = " + fmt(cp(0))],
+    ["extension-shear (A16)", flag(1), "|A16| / A11 = " + fmt(cp(1))],
+    ["extension-shear (A26)", flag(2), "|A26| / A22 = " + fmt(cp(2))],
+    ["bend-twist (D16)", flag(3), "|D16| / D11 = " + fmt(cp(3))],
+    ["bend-twist (D26)", flag(4), "|D26| / D22 = " + fmt(cp(4))],
+  ]);
+  table("mid", [""].concat([0, 1, 2, 3, 4, 5].map(i => LOADN[i] + " / " + LOADE[i])), [
+    ["forces and moments"].concat([0, 1, 2, 3, 4, 5].map(i => res(R.MID, 6 + i))),
+    ["strains and curvatures"].concat([0, 1, 2, 3, 4, 5].map(i => {
+      const big = Math.max(...[0, 1, 2, 3, 4, 5].map(j => Math.abs(res(R.MID, j)) * (j < 3 ? 1 : res(R.SCAL, 2))));
+      const x = res(R.MID, i);
+      return Math.abs(x) * (i < 3 ? 1 : res(R.SCAL, 2)) < 1e-12 * big ? 0 : x;
+    })),
+  ]);
+  renderPlyTable();
+  const n = plies.length;
+  table("ratio", ["ply"].concat(CRIT).concat(["Hashin mode"]), plies.map((p, i) =>
+    [`${i + 1} (${p.ang}°)`].concat(CRIT.map((_, c) => { const r = res(R.RATIO, i, c); return r < 1 ? `<span class="warn">${fmt(r)}</span>` : fmt(r); }))
+      .concat([HMODE[res(R.HMODE, i)]])));
+  const l = load[0], applied = mode() === 0 ? l : [0, 1, 2, 3, 4, 5].map(i => res(R.MID, 6 + i));
+  table("fpf", ["criterion", "R", "ply", "load at failure: N (N/mm), M (N·mm/mm)"], CRIT.map((cn, c) => {
+    const r = res(R.FPF, c, 0), p = res(R.FPF, c, 1);
+    return [cn, r, p >= 0 ? p + 1 : "—", r < BIG ? applied.map(v => fmt(v * r)).join(", ") : "—"];
+  }));
+  const steps = res(R.LPF, 1), rows = [];
+  for (let s = 0; s < steps; s++) rows.push([`failure ${s + 1}`, `ply ${res(R.LPFSTEP, s, 0) + 1}`, res(R.LPFSTEP, s, 1)]);
+  const lf = res(R.LPF, 0);
+  rows.push(["last-ply failure", "", lf < BIG ? lf : "not reached: the load does not stress every ply"]);
+  table("lpf", ["", "ply", "load factor"], rows);
+  const pl = i => res(R.PLATE, i);
+  table("buck", ["load", "critical value (N/mm)", "half-waves"], [
+    ["Nx compression", pl(0), `m = ${pl(1)}, n = 1`], ["Ny compression", pl(2), `m = 1, n = ${pl(3)}`]]);
+  const fr = [];
+  for (let i = 0; i < NFREQ; i++) fr.push([`mode ${i + 1}`, res(R.FREQ, i, 0), `${res(R.FREQ, i, 1)}, ${res(R.FREQ, i, 2)}`]);
+  table("freq", ["", "frequency (Hz)", "m, n"], fr);
+  $("plate-warn").textContent = pl(4) ? "This laminate has B, D16 or D26 not zero: the closed forms drop them and are an approximation (they overestimate the buckling load and the frequencies)." : "";
+}
+
+function renderPlyTable() {
+  if (!ok) return;
+  const mat = +$("ply-axes").value;
+  const ax = mat ? ["1", "2", "12"] : ["x", "y", "xy"];
+  const head = ["ply", "z (mm)"].concat(ax.map((a, i) => (i === 2 ? "γ" : "ε") + a)).concat(ax.map((a, i) => (i === 2 ? "τ" : "σ") + a + " (MPa)"));
+  // Round-off below 1e-12 of the largest strain or stress of the table shows as 0.
+  const v = [];
+  plies.forEach((p, i) => { for (let k = 0; k < 2; k++) v.push([0, 1, 2, 3, 4, 5].map(j => res(R.PLY, i, k * 12 + mat * 6 + j))); });
+  const big = [0, 3].map(o => Math.max(...v.map(r => Math.max(Math.abs(r[o]), Math.abs(r[o + 1]), Math.abs(r[o + 2])))));
+  const rows = v.map((r, n) => [`${(n >> 1) + 1} ${n & 1 ? "top" : "bottom"}`, res(R.Z, n >> 1, n & 1)]
+    .concat(r.map((x, j) => Math.abs(x) < 1e-12 * big[j < 3 ? 0 : 1] ? 0 : x)));
+  table("plytab", head, rows);
+}
+
+// ---- 2D plots ----
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function prep(cv) {
+  const d = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * d; cv.height = h * d;
+  const g = cv.getContext("2d");
+  g.setTransform(d, 0, 0, d, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.font = "12px system-ui, sans-serif";
+  return [g, w, h];
+}
+function nice(lo, hi) {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const step = Math.pow(10, Math.floor(Math.log10((hi - lo) / 4)));
+  const s = [1, 2, 5, 10].map(m => m * step).find(s => (hi - lo) / s <= 6);
+  return { lo: Math.floor(lo / s) * s, hi: Math.ceil(hi / s) * s, s };
+}
+function axes(g, w, h, X, Y, xl, yl) {
+  const ink = css("--muted"), line = css("--line");
+  g.strokeStyle = line; g.fillStyle = ink; g.lineWidth = 1;
+  const px = x => 56 + (x - X.lo) / (X.hi - X.lo) * (w - 72), py = y => h - 36 - (y - Y.lo) / (Y.hi - Y.lo) * (h - 52);
+  g.textAlign = "center";
+  const tick = (v, st) => Math.abs(v) < st * 1e-6 ? 0 : +v.toPrecision(10);
+  for (let x = X.lo; x <= X.hi + X.s / 2; x += X.s) { g.beginPath(); g.moveTo(px(x), py(Y.lo)); g.lineTo(px(x), py(Y.hi)); g.stroke(); g.fillText(fmt(tick(x, X.s)), px(x), h - 20); }
+  g.textAlign = "right";
+  for (let y = Y.lo; y <= Y.hi + Y.s / 2; y += Y.s) { g.beginPath(); g.moveTo(px(X.lo), py(y)); g.lineTo(px(X.hi), py(y)); g.stroke(); g.fillText(fmt(tick(y, Y.s)), 50, py(y) + 4); }
+  g.textAlign = "center"; g.fillText(xl, (w + 40) / 2, h - 4);
+  g.save(); g.translate(12, h / 2); g.rotate(-Math.PI / 2); g.fillText(yl, 0, 0); g.restore();
+  return [px, py];
+}
+function draw2d() {
+  if (!M) return;
+  if (!ok) { prep($("tt")); prep($("env")); return; }
+  // Through-thickness plot: the value at the bottom and top of each ply, a line in each ply.
+  {
+    const [g, w, h] = prep($("tt"));
+    const q = TTQ[+$("tt-q").value], n = plies.length;
+    const pts = [];
+    for (let i = 0; i < n; i++) for (let k = 0; k < 2; k++) pts.push([res(R.PLY, i, k * 12 + q.off), res(R.Z, i, k)]);
+    let xs = pts.map(p => p[0]); xs.push(0);
+    const X = nice(Math.min(...xs), Math.max(...xs)), Y = nice(pts[0][1], pts[pts.length - 1][1]);
+    const [px, py] = axes(g, w, h, X, Y, q.name, "z (mm)");
+    g.strokeStyle = css("--muted"); g.setLineDash([3, 3]);
+    for (let i = 0; i <= n; i++) { const z = res(R.Z, Math.min(i, n - 1), i === n ? 1 : 0); g.beginPath(); g.moveTo(px(X.lo), py(z)); g.lineTo(px(X.hi), py(z)); g.stroke(); }
+    g.setLineDash([]); g.strokeStyle = css("--accent"); g.lineWidth = 2;
+    g.beginPath();
+    pts.forEach((p, i) => i === 0 ? g.moveTo(px(p[0]), py(p[1])) : g.lineTo(px(p[0]), py(p[1])));
+    g.stroke();
+  }
+  // Envelope.
+  {
+    const [g, w, h] = prep($("env"));
+    const a = +$("env-a").value, b = +$("env-b").value;
+    const pts = [];
+    for (let i = 0; i < NENV; i++) pts.push([res(R.ENV, i, 0), res(R.ENV, i, 1)]);
+    const fin = pts.filter(p => Math.abs(p[0]) < BIG && Math.abs(p[1]) < BIG);
+    const nm = [0, 1, 2, 3, 4, 5].map(i => res(R.MID, 6 + i));
+    const lp = [nm[a], nm[b]];
+    const xs = fin.map(p => p[0]).concat([lp[0], 0]), ys = fin.map(p => p[1]).concat([lp[1], 0]);
+    const X = nice(Math.min(...xs), Math.max(...xs)), Y = nice(Math.min(...ys), Math.max(...ys));
+    const u = i => i < 3 ? " (N/mm)" : " (N·mm/mm)";
+    const [px, py] = axes(g, w, h, X, Y, LOADN[a] + u(a), LOADN[b] + u(b));
+    g.strokeStyle = css("--accent"); g.lineWidth = 2; g.beginPath();
+    let first = true;
+    for (const p of pts) {
+      if (Math.abs(p[0]) >= BIG || Math.abs(p[1]) >= BIG) { first = true; continue; }
+      if (first) g.moveTo(px(p[0]), py(p[1])); else g.lineTo(px(p[0]), py(p[1]));
+      first = false;
+    }
+    if (fin.length === pts.length) g.closePath();
+    g.stroke();
+    g.fillStyle = css("--warn"); g.beginPath(); g.arc(px(lp[0]), py(lp[1]), 4, 0, 7); g.fill();
+    if (fin.length < pts.length) { g.fillStyle = css("--muted"); g.textAlign = "left"; g.fillText("The envelope is open: some directions never fail.", 60, 16); }
+  }
+}
+
+// ---- 3D view (WebGL2) ----
+const view = $("view");
+const gl = view.getContext("webgl2", { antialias: true });
+let prog, cam = { yaw: -0.6, pitch: 0.45, dist: 3.2 };
+function shader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+if (gl) {
+  prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, `#version 300 es
+in vec3 pos; in vec3 nrm; in vec3 col; uniform mat4 mvp; uniform float lit; out vec3 c;
+void main() { gl_Position = mvp * vec4(pos, 1.0);
+  float d = abs(dot(normalize(nrm), normalize(vec3(0.4, 0.8, 0.6))));
+  c = col * mix(1.0, 0.45 + 0.55 * d, lit); }`));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, `#version 300 es
+precision mediump float; in vec3 c; out vec4 o; void main() { o = vec4(c, 1.0); }`));
+  gl.linkProgram(prog);
+}
+// Matrices, column-major.
+function mul(a, b) { const o = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; o[i * 4 + j] = s; } return o; }
+function persp(f, asp, n, fa) { const t = 1 / Math.tan(f / 2); return new Float32Array([t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0]); }
+function lookAt(e, c, u) {
+  const sub = (a, b) => a.map((v, i) => v - b[i]), nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const z = nrm(sub(e, c)), x = nrm(cross(u, z)), y = cross(z, x);
+  return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot(x, e), -dot(y, e), -dot(z, e), 1]);
+}
+// Colour maps: a diverging blue-white-red for signed values, a sequential one otherwise.
+function lerpc(stops, t) {
+  t = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(t)), f = t - i;
+  return stops[i].map((v, k) => v + (stops[i + 1][k] - v) * f);
+}
+const DIV = [[0.13, 0.28, 0.6], [0.5, 0.65, 0.85], [0.95, 0.95, 0.93], [0.9, 0.55, 0.42], [0.65, 0.12, 0.13]];
+const SEQ = [[0.27, 0.0, 0.33], [0.23, 0.32, 0.55], [0.13, 0.57, 0.55], [0.37, 0.79, 0.38], [0.99, 0.91, 0.14]];
+const MATC = [[0.3, 0.3, 0.32], [0.55, 0.7, 0.4], [0.72, 0.74, 0.78], [0.85, 0.65, 0.35], [0.5, 0.55, 0.8], [0.8, 0.5, 0.6]];
+
+// The value of the chosen field at the bottom (k = 0) and top (k = 1) of ply i, or null.
+function fieldValues() {
+  const f = +$("field").value, c = +$("case").value, comp = +$("comp").value, n = plies.length;
+  if (!ok || f === 4) return null;
+  const v = [];
+  for (let i = 0; i < n; i++) {
+    if (f === 0) { const s = res(R.CHMSIG, c, i * 6 + comp); v.push([s, s]); }
+    else if (f === 1) { const s = res(R.CHMQ, c, i * 3 + comp); v.push([s, s]); }
+    else if (f === 2) v.push([res(R.PLY, i, TTQ[comp].off), res(R.PLY, i, 12 + TTQ[comp].off)]);
+    else { const r = Math.min(res(R.RATIO, i, comp), 1e3); v.push([r, r]); }
+  }
+  return { v, seq: f === 3 };
+}
+
+function draw3d() {
+  if (!gl) return;
+  const d = devicePixelRatio || 1;
+  view.width = view.clientWidth * d; view.height = view.clientHeight * d;
+  gl.viewport(0, 0, view.width, view.height);
+  const bg = css("--plot-bg");
+  const bgc = bg.match(/\w\w/g).map(h => parseInt(h, 16) / 255);
+  gl.clearColor(bgc[0], bgc[1], bgc[2], 1); gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (!plies.length) return;
+  const fv = fieldValues();
+  let lo = 0, hi = 0;
+  if (fv) { const all = fv.v.flat(); lo = Math.min(...all); hi = Math.max(...all); }
+  const sym = fv && !fv.seq && lo < 0 && hi > 0;
+  if (sym) { hi = Math.max(-lo, hi); lo = -hi; }
+  const span = hi - lo || 1;
+  const color = x => lerpc(sym ? DIV : SEQ, (x - lo) / span);
+  // Geometry: a 1 x 1 cell, plies scaled to a total height of 0.8, with a gap between them.
+  const H = plies.reduce((s, p) => s + p.t, 0), sc = 0.8 / H, gap = +$("gap").value * 0.8 / Math.max(plies.length, 1);
+  const tri = [], lines = [];
+  let z = -(0.8 + gap * (plies.length - 1)) / 2;
+  const quad = (a, b, c, e, n, ca, cb, cc, ce) => { for (const [p, cl] of [[a, ca], [b, cb], [c, cc], [a, ca], [c, cc], [e, ce]]) tri.push(...p, ...n, ...cl); };
+  plies.forEach((p, i) => {
+    const z0 = z, z1 = z + p.t * sc;
+    const cb = fv ? color(fv.v[i][0]) : MATC[p.mat % MATC.length], ct = fv ? color(fv.v[i][1]) : cb;
+    const h = 0.5;
+    // y up on screen is z of the laminate: the cell is (x, z_lam, -y).
+    const P = (x, y, zz) => [x, zz, -y];
+    quad(P(-h, -h, z1), P(h, -h, z1), P(h, h, z1), P(-h, h, z1), [0, 1, 0], ct, ct, ct, ct);
+    quad(P(-h, -h, z0), P(-h, h, z0), P(h, h, z0), P(h, -h, z0), [0, -1, 0], cb, cb, cb, cb);
+    quad(P(-h, -h, z0), P(h, -h, z0), P(h, -h, z1), P(-h, -h, z1), [0, 0, 1], cb, cb, ct, ct);
+    quad(P(h, h, z0), P(-h, h, z0), P(-h, h, z1), P(h, h, z1), [0, 0, -1], cb, cb, ct, ct);
+    quad(P(h, -h, z0), P(h, h, z0), P(h, h, z1), P(h, -h, z1), [1, 0, 0], cb, cb, ct, ct);
+    quad(P(-h, h, z0), P(-h, -h, z0), P(-h, -h, z1), P(-h, h, z1), [-1, 0, 0], cb, cb, ct, ct);
+    // Fibre lines on the top face, clipped to the square.
+    const a = p.ang * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a), nx = -dy, ny = dx;
+    const fz = z1 + 0.002, m = expand(mats[p.mat]);
+    if (!(mats[p.mat].iso || Math.abs(m.e1 - m.e2) < 1e-9 * m.e1)) {
+      for (let o = -0.7; o <= 0.7001; o += 0.07) {
+        // Clip the line {o n + s d} to |x|, |y| <= h.
+        let s0 = -2, s1 = 2;
+        for (const [pc, dc] of [[o * nx, dx], [o * ny, dy]]) {
+          if (Math.abs(dc) < 1e-12) { if (Math.abs(pc) > h) { s0 = 1; s1 = 0; } continue; }
+          let a0 = (-h - pc) / dc, a1 = (h - pc) / dc; if (a0 > a1) [a0, a1] = [a1, a0];
+          s0 = Math.max(s0, a0); s1 = Math.min(s1, a1);
+        }
+        if (s1 > s0) lines.push(...P(o * nx + s0 * dx, o * ny + s0 * dy, fz), ...P(o * nx + s1 * dx, o * ny + s1 * dy, fz));
+      }
+    }
+    // Edges of the ply.
+    const E = [[-h, -h], [h, -h], [h, h], [-h, h]];
+    for (let k = 0; k < 4; k++) {
+      const [x0, y0] = E[k], [x1, y1] = E[(k + 1) % 4];
+      lines.push(...P(x0, y0, z0), ...P(x1, y1, z0), ...P(x0, y0, z1), ...P(x1, y1, z1), ...P(x0, y0, z0), ...P(x0, y0, z1));
+    }
+    z = z1 + gap;
+  });
+  // Axes: x red, y green, z blue, from a corner.
+  const axl = [[[0.75, 0, 0], [0.85, 0.2, 0.2]], [[0, 0, -0.75], [0.2, 0.65, 0.25]], [[0, 0.75, 0], [0.25, 0.4, 0.9]]];
+  const ax0 = [-0.75, -0.55, 0.75];
+  const lineData = [];
+  const ink = css("--ink").match(/\w\w/g).map(h => parseInt(h, 16) / 255);
+  for (let i = 0; i < lines.length; i += 3) lineData.push(lines[i], lines[i + 1], lines[i + 2], 0, 1, 0, ...(fv ? [0.1, 0.1, 0.1] : ink.map(v => v * 0.25)));
+  for (const [d, c] of axl) lineData.push(...ax0, 0, 1, 0, ...c, ax0[0] + d[0] * 0.4, ax0[1] + d[1] * 0.4, ax0[2] + d[2] * 0.4, 0, 1, 0, ...c);
+  const asp = view.width / view.height;
+  const eye = [cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw), cam.dist * Math.sin(cam.pitch), cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw)];
+  const mvp = mul(persp(0.7, asp, 0.1, 50), lookAt(eye, [0, 0, 0], [0, 1, 0]));
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog, "mvp"), false, mvp);
+  const drawArr = (data, modeGl, lit) => {
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STREAM_DRAW);
+    for (const [name, off] of [["pos", 0], ["nrm", 12], ["col", 24]]) {
+      const loc = gl.getAttribLocation(prog, name);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 3, gl.FLOAT, false, 36, off);
+    }
+    gl.uniform1f(gl.getUniformLocation(prog, "lit"), lit);
+    gl.drawArrays(modeGl, 0, data.length / 9);
+    gl.deleteBuffer(buf);
+  };
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1, 1);
+  drawArr(tri, gl.TRIANGLES, fv ? 0.25 : 1);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  drawArr(lineData, gl.LINES, 0);
+  drawLegend(fv, lo, hi, sym);
+}
+function drawLegend(fv, lo, hi, sym) {
+  const [g, w, h] = prep($("legend"));
+  g.fillStyle = css("--muted");
+  if (!fv) {
+    g.textAlign = "left";
+    plies.length && g.fillText(mats.map((m, i) => plies.some(p => p.mat === i) ? m.name : null).filter(Boolean).join(", ") + ". Lines on each ply: fibre direction.", 0, 14);
+    return;
+  }
+  for (let x = 0; x < w - 120; x++) {
+    const t = x / (w - 121), c = lerpc(sym ? DIV : SEQ, t);
+    g.fillStyle = `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+    g.fillRect(60 + x, 2, 1, 14);
+  }
+  g.fillStyle = css("--muted");
+  g.textAlign = "right"; g.fillText(fmt(lo), 56, 14);
+  g.textAlign = "left"; g.fillText(fmt(hi), w - 56, 14);
+  g.textAlign = "center"; g.fillText($("comp").selectedOptions[0]?.text || "", w / 2, 30);
+}
+// Orbit with pointer drag, zoom with the wheel and with two pointers.
+const ptrs = new Map();
+view.addEventListener("pointerdown", e => { view.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, [e.clientX, e.clientY]); });
+view.addEventListener("pointerup", e => ptrs.delete(e.pointerId));
+view.addEventListener("pointercancel", e => ptrs.delete(e.pointerId));
+view.addEventListener("pointermove", e => {
+  if (!ptrs.has(e.pointerId)) return;
+  const [x, y] = ptrs.get(e.pointerId);
+  if (ptrs.size === 1) {
+    cam.yaw -= (e.clientX - x) * 0.01;
+    cam.pitch = Math.max(-1.5, Math.min(1.5, cam.pitch + (e.clientY - y) * 0.01));
+  } else if (ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()], d0 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    const [c, dd] = [...ptrs.values()], d1 = Math.hypot(c[0] - dd[0], c[1] - dd[1]);
+    cam.dist = Math.max(1.2, Math.min(10, cam.dist * d0 / (d1 || d0)));
+  }
+  ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  draw3d();
+});
+view.addEventListener("wheel", e => { e.preventDefault(); cam.dist = Math.max(1.2, Math.min(10, cam.dist * Math.exp(e.deltaY * 0.001))); draw3d(); }, { passive: false });
+addEventListener("resize", () => { draw3d(); draw2d(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { draw3d(); draw2d(); });
+
+// ---- start ----
+renderMats();
+renderLoad();
+renderField();
+if (!gl) $("legend").insertAdjacentHTML("beforebegin", "<p class='warn'>This browser has no WebGL2: the 3D view is off.</p>");
+PlyhouseModule().then(m => { M = m; loadPreset(0); }).catch(e => { $("status").innerHTML = `<span class="warn">The solver did not start: ${e}</span>`; });
+</script>
+</body>
+</html>
