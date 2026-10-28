@@ -12,6 +12,90 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 File Compare matches Git without repository writes', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-file-compare-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    for (const kind of ['unborn-empty', 'root', 'mixed', 'packed', 'detached', 'unchanged', 'crlf', 'ident', 'filter', 'encoding']) {
+      const dir = path.join(root, kind);
+      fs.mkdirSync(dir);
+      git(dir, 'init', '-b', 'main');
+      git(dir, 'config', 'core.autocrlf', 'false');
+      git(dir, 'config', 'core.filemode', 'false');
+      if (kind !== 'unborn-empty') {
+        fs.writeFileSync(path.join(dir, 'file'), 'first\nsecond\nthird\n');
+        fs.writeFileSync(path.join(dir, 'removed'), 'remove me\n');
+        fs.writeFileSync(path.join(dir, 'binary'), Buffer.from([0, 1, 2]));
+        git(dir, 'add', '.');
+        git(dir, 'update-index', '--chmod=+x', 'file');
+        if (kind !== 'root') git(dir, 'commit', '-m', 'Base');
+        if (kind === 'packed') { git(dir, 'gc'); git(dir, 'pack-refs', '--all'); }
+        if (kind === 'detached') git(dir, 'checkout', '--detach');
+        if (kind === 'mixed') {
+          fs.writeFileSync(path.join(dir, 'file'), 'staged content\n');
+          git(dir, 'add', 'file');
+        }
+        if (kind !== 'unchanged') {
+          fs.writeFileSync(path.join(dir, 'file'), 'first\nchanged\nthird');
+          fs.unlinkSync(path.join(dir, 'removed'));
+          fs.writeFileSync(path.join(dir, 'binary'), Buffer.from([0, 3, 4, 5]));
+        }
+        if (kind === 'crlf') {
+          git(dir, 'config', 'core.autocrlf', 'input');
+          fs.writeFileSync(path.join(dir, 'file'), 'first\r\nchanged\r\nthird\r\n');
+        }
+        if (kind === 'ident') {
+          fs.writeFileSync(path.join(dir, '.gitattributes'), 'file ident\n');
+          fs.writeFileSync(path.join(dir, 'file'), '$Id: expanded value $\n');
+        }
+        if (kind === 'filter') {
+          fs.writeFileSync(path.join(dir, '.gitattributes'), 'file filter=test\n');
+          git(dir, 'config', 'filter.test.clean', 'false');
+        }
+        if (kind === 'encoding') fs.writeFileSync(path.join(dir, '.gitattributes'), 'file working-tree-encoding=UTF-16LE\n');
+      }
+      fs.writeFileSync(path.join(dir, 'untracked'), 'untracked content\n');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(dir));
+      const before = snapshot(m);
+      assert.equal(typeof m._html_git_file_compare_probe, 'function', 'File Compare export');
+      const refuse = kind === 'filter' || kind === 'encoding';
+      const expected = refuse ? null : git(dir, 'diff', '--no-ext-diff', '--no-textconv', '--no-color');
+      for (let call = 0; call < 2; call++) {
+        m.FS.writeFile('/compare-result', 'stale patch');
+        const rc = m._html_git_file_compare_probe();
+        if (refuse) {
+          assert.ok(rc < 0, kind + ': unsupported conversion');
+          assert.equal(m.FS.analyzePath('/compare-result').exists, false, kind + ': no stale patch');
+        } else {
+          assert.equal(rc, 0, kind);
+          assert.equal(m.FS.readFile('/compare-result', { encoding: 'utf8' }), expected, kind + ': Git patch');
+        }
+        assert.deepEqual(snapshot(m), before, kind + ': repository bytes');
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      if (!refuse) {
+        const repo = new (loadCore().Repo)(new NodeFS(dir));
+        const jsPatch = (await repo.diff({ from: 'index', to: 'worktree' })).text;
+        if (kind === 'crlf' || kind === 'ident') assert.notEqual(jsPatch, expected, kind + ': JavaScript omits conversion');
+        else assert.equal(jsPatch, expected, kind + ': JavaScript patch');
+      }
+      git(dir, 'fsck', '--full', '--strict');
+    }
+    const m = await loadWasm(artifact);
+    m.FS.writeFile('/compare-result', 'stale patch');
+    assert.ok(m._html_git_file_compare_probe() < 0, 'absent repository');
+    assert.equal(m.FS.analyzePath('/compare-result').exists, false, 'no stale result after refusal');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Index Compare matches Git without repository writes', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {

@@ -154,12 +154,14 @@ struct commit_parents {
     size_t count;
 };
 
-/* Compare HEAD with the index. Keep the patch outside the repository. */
-EMSCRIPTEN_KEEPALIVE int html_git_index_compare_probe(void)
+/* Keep both comparison patches outside the repository. */
+static int compare_probe(int files)
 {
     git_repository *repo = NULL;
     git_object *tree = NULL;
     git_diff *diff = NULL;
+    git_index *index = NULL;
+    git_diff_options options = GIT_DIFF_OPTIONS_INIT;
     git_buf patch = GIT_BUF_INIT;
     FILE *out = NULL;
     int rc;
@@ -167,9 +169,21 @@ EMSCRIPTEN_KEEPALIVE int html_git_index_compare_probe(void)
     remove("/compare-result");
     if ((rc = git_libgit2_init()) < 0) return rc;
     if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
-    if ((rc = git_repository_head_unborn(repo)) < 0) goto done;
-    if (!rc && (rc = git_revparse_single(&tree, repo, "HEAD^{tree}")) < 0) goto done;
-    if ((rc = git_diff_tree_to_index(&diff, repo, (git_tree *)tree, NULL, NULL)) < 0) goto done;
+    if (files) {
+        if ((rc = git_repository_index(&index, repo)) < 0) goto done;
+        /* Folder handles omit modes. Compare content with the retained index mode. */
+        options.flags |= GIT_DIFF_IGNORE_FILEMODE;
+        for (size_t i = 0; i < git_index_entrycount(index); i++) {
+            const git_index_entry *entry = git_index_get_byindex(index, i);
+            if ((rc = check_stage_attributes(repo, entry->path)) < 0) goto done;
+        }
+        rc = git_diff_index_to_workdir(&diff, repo, index, &options);
+    } else {
+        if ((rc = git_repository_head_unborn(repo)) < 0) goto done;
+        if (!rc && (rc = git_revparse_single(&tree, repo, "HEAD^{tree}")) < 0) goto done;
+        rc = git_diff_tree_to_index(&diff, repo, (git_tree *)tree, NULL, NULL);
+    }
+    if (rc < 0) goto done;
     if ((rc = git_diff_find_similar(diff, NULL)) < 0) goto done;
     if ((rc = git_diff_to_buf(&patch, diff, GIT_DIFF_FORMAT_PATCH)) < 0) goto done;
     out = fopen("/compare-result", "wb");
@@ -181,10 +195,21 @@ done:
     if (rc < 0) remove("/compare-result");
     git_buf_dispose(&patch);
     git_diff_free(diff);
+    git_index_free(index);
     git_object_free(tree);
     git_repository_free(repo);
     git_libgit2_shutdown();
     return rc;
+}
+
+EMSCRIPTEN_KEEPALIVE int html_git_index_compare_probe(void)
+{
+    return compare_probe(0);
+}
+
+EMSCRIPTEN_KEEPALIVE int html_git_file_compare_probe(void)
+{
+    return compare_probe(1);
 }
 
 static int append_merge_parent(const git_oid *oid, void *payload)

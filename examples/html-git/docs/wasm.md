@@ -976,3 +976,65 @@ Each trial checked HEAD and tree IDs against JavaScript.
 | Folder import | 279.45 |
 | First libgit2 HEAD and index reads | 4.46 |
 | Unchanged bridge export | 61.33 |
+
+## File Compare probe on 2026-10-28
+
+The Wasm probe now compares the Index with files through libgit2.
+The new test failed against the previous build because the File Compare export did not exist.
+Both Compare exports share patch output and stale patch removal.
+The page still uses JavaScript. This change adds no package or interface control.
+
+- Compare file content against the Index without repository writes.
+  Reason: The page exposes this action, but the previous Wasm probe could not produce its patch.
+- Ignore file mode differences from MEMFS.
+  Reason: Folder handles omit executable modes. The executable fixture must not report a false mode change.
+- Refuse unsupported external filters and file encodings through the existing Stage checks.
+  Reason: Those conversions can change patch bytes, but libgit2 cannot perform them in this build.
+
+| Case | Result and evidence |
+| --- | --- |
+| Empty Index with unborn HEAD | Empty patch matches Git and JavaScript. |
+| Staged root files | File edits, deletions and binary changes match Git and JavaScript. |
+| Mixed staged and unstaged edits | Patch uses staged bytes as its base and matches Git and JavaScript. |
+| Packed objects and refs | Patch matches Git and JavaScript. |
+| Detached HEAD | Patch matches Git and JavaScript. |
+| Unchanged files | Empty patch matches Git and JavaScript despite an executable Index entry. |
+| CRLF conversion | Patch matches Git. JavaScript omits the conversion and produces a different patch. |
+| Ident contraction | Patch matches Git. JavaScript omits the contraction and produces a different patch. |
+| External clean filter or file encoding | Refuse with unchanged repository bytes, zero bridge writes and no stale patch. |
+
+Every accepted case excludes untracked files.
+Each of the 10 cases passes 2 calls with unchanged repository bytes and zero bridge writes.
+Every fixture passes strict fsck. An absent repository also causes refusal and removes the stale patch.
+The reference command uses `git diff --no-ext-diff --no-textconv --no-color` with `core.filemode=false`.
+Conflict patches and other diff configuration still need separate proof.
+
+The baseline passed all 36 tests. The fresh emcc and quine-wasm build passes all 37 tests.
+JavaScript syntax checks and `git diff --check` passed. This repository defines no lint or format command.
+This run started no browser or server and created no commit. The interface retains its 3 recorded faults.
+Real browser folder handles still need proof before an engine replacement.
+
+The operation benchmark used a copy of the packed fixture with 10,001 tracked files and 20 commits.
+It changed 100 files without Stage. Both engines matched Git's 16,350-byte patch in all 5 trials.
+The median File Compare time was 121.31 ms for JavaScript and 850.79 ms for Wasm.
+These times include patch reads but exclude instance creation, folder import and export.
+Thus this probe adds compatibility, but does not establish a speed gain.
+The Wasm call checks attributes for every Index entry before the libgit2 diff.
+A later run can measure that cost separately before any optimization.
+
+The separate read benchmark used the unchanged packed fixture without a concurrent test process.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 63.96 |
+| JavaScript Refresh | 59.71 |
+| JavaScript Status | 55.70 |
+| JavaScript Log | 0.42 |
+| JavaScript Tree | 0.57 |
+| JavaScript HEAD and Index reads | 2.12 |
+| Wasm instance creation | 5.91 |
+| Folder import | 298.00 |
+| First libgit2 HEAD and Index reads | 17.18 |
+| Unchanged bridge export | 63.97 |
