@@ -444,3 +444,51 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Stage speed.
 The measured gain is correct conflict resolution for paths that the probe previously refused.
+
+## Stage external filter fault on 2026-10-28
+
+Stage now refuses external filters before it changes repository bytes.
+The new fixture exposed a success result from Wasm despite a different blob from Git.
+The fixture assigns `filter=uppercase` and configures `filter.uppercase.clean` as `tr a-z A-Z`.
+Git stores `NEW`, but JavaScript and the previous Wasm probe store `new`.
+Libgit2 does not supply this external filter, and quine-wasm cannot execute an external command.
+
+- Refuse a selected file with a nonempty `clean` or `process` command, or an unavailable required filter.
+  Reason: The uppercase fixture exposed a silent wrong-result fault before this change.
+
+The check reads the effective `filter` attribute and the repository config before the index add.
+It does not execute a command or add a package.
+An optional filter without a command remains a no-op, as in Git.
+A file deletion needs no filter, so Stage still removes its index entry.
+The test checks these 2 successful cases against Git and runs strict fsck.
+It also checks 4 refusal cases and confirms identical repository bytes and zero bridge writes after each refusal.
+
+The page still uses JavaScript, which retains this external filter limitation.
+A future Wasm replacement must report the unsupported filter rather than use JavaScript for this case.
+Reason: The same fixture proves that JavaScript also produces the wrong blob.
+Built-in attribute conversions and real browser folder handles still need separate checks before an engine replacement.
+The interface retains its 4 recorded faults.
+
+The baseline passed all 25 tests. The new fixture failed before the change and passed after the change.
+The emcc and quine-wasm build passed. All 26 tests passed with an explicit Wasm artifact path.
+The syntax check and `git diff --check` passed. No browser or server started.
+
+The separate benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 149.81 |
+| JavaScript Refresh | 121.50 |
+| JavaScript Status | 116.37 |
+| JavaScript Log | 0.93 |
+| JavaScript Tree | 1.52 |
+| JavaScript HEAD and index reads | 4.65 |
+| Wasm instance creation | 10.88 |
+| Folder import | 692.07 |
+| First libgit2 HEAD and index reads | 37.47 |
+| Unchanged bridge export | 141.23 |
+
+These read costs do not measure Stage speed.
+The measured gain is a safe refusal where Stage previously reported success with the wrong result.

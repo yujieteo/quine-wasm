@@ -348,3 +348,68 @@ test('libgit2 Stage resolves selected merge conflicts, including ignored and del
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('libgit2 Stage refuses external clean filters before it changes repository bytes', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-stage-filter-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    git(root, 'init', '-b', 'main');
+    fs.writeFileSync(path.join(root, 'file'), 'old\n');
+    git(root, 'add', '.');
+    git(root, 'commit', '-m', 'Base');
+    fs.writeFileSync(path.join(root, '.gitattributes'), 'file filter=uppercase\n');
+    fs.writeFileSync(path.join(root, 'file'), 'new\n');
+    git(root, 'config', 'filter.uppercase.clean', 'tr a-z A-Z');
+    const reference = path.join(root, 'reference');
+    fs.mkdirSync(reference);
+    fs.cpSync(path.join(root, '.git'), path.join(reference, '.git'), { recursive: true });
+    fs.copyFileSync(path.join(root, '.gitattributes'), path.join(reference, '.gitattributes'));
+    fs.copyFileSync(path.join(root, 'file'), path.join(reference, 'file'));
+    git(reference, 'add', 'file');
+    assert.equal(git(reference, 'show', ':file'), 'NEW\n', 'Git executes the clean filter');
+    // The current JavaScript engine also lacks external filters.
+    const js = new (loadCore().Repo)(new NodeFS(root));
+    await js.add(['file']);
+    assert.equal(git(root, 'show', ':file'), 'new\n');
+    assert.notEqual(git(root, 'write-tree'), git(reference, 'write-tree'));
+    for (const config of ['clean', 'required-clean', 'process', 'required-absent']) {
+      if (config === 'required-clean') git(root, 'config', 'filter.uppercase.required', 'true');
+      if (config === 'process') {
+        git(root, 'config', '--unset', 'filter.uppercase.clean');
+        git(root, 'config', 'filter.uppercase.process', 'unavailable-filter');
+      }
+      if (config === 'required-absent') git(root, 'config', '--unset', 'filter.uppercase.process');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(root));
+      const before = snapshot(m);
+      m.FS.writeFile('/stage-path', 'file');
+      assert.ok(m._html_git_stage_probe() < 0, config + ': unsupported filter must fail');
+      assert.deepEqual(snapshot(m), before, config + ': no index or object change');
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    }
+    // An optional absent driver is a no-op in Git. A deletion needs no filter.
+    git(root, 'config', 'filter.uppercase.required', 'false');
+    for (const deleted of [false, true]) {
+      if (deleted) {
+        git(root, 'config', 'filter.uppercase.clean', 'tr a-z A-Z');
+        fs.unlinkSync(path.join(root, 'file'));
+        fs.unlinkSync(path.join(reference, 'file'));
+      } else git(reference, 'config', '--unset', 'filter.uppercase.clean');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(root));
+      m.FS.writeFile('/stage-path', 'file');
+      assert.equal(m._html_git_stage_probe(), 0);
+      await bridge.flush();
+      git(reference, 'add', 'file');
+      assert.equal(git(root, 'write-tree'), git(reference, 'write-tree'));
+      git(root, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

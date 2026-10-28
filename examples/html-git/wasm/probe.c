@@ -2,6 +2,52 @@
 #include <git2.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
+
+/* Wasm cannot execute external clean or process commands. */
+static int check_external_filter(git_repository *repo, const char *path)
+{
+    const char *filter;
+    const char *commands[] = { "clean", "process" };
+    git_config *config = NULL;
+    git_config_entry *entry = NULL;
+    char *key = NULL, *fullpath = NULL;
+    struct stat st;
+    int rc, required;
+
+    fullpath = malloc(strlen(path) + sizeof("/repo/"));
+    if (!fullpath) return -1;
+    sprintf(fullpath, "/repo/%s", path);
+    rc = stat(fullpath, &st);
+    free(fullpath);
+    if (rc < 0) return errno == ENOENT ? 0 : -1;
+    if ((rc = git_attr_get(&filter, repo, 0, path, "filter")) < 0) return rc;
+    if (!GIT_ATTR_HAS_VALUE(filter)) return 0;
+    if ((rc = git_repository_config_snapshot(&config, repo)) < 0) return rc;
+    key = malloc(strlen(filter) + sizeof("filter..required"));
+    if (!key) { rc = -1; goto done; }
+    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        sprintf(key, "filter.%s.%s", filter, commands[i]);
+        rc = git_config_get_entry(&entry, config, key);
+        if (rc == GIT_ENOTFOUND) continue;
+        if (rc < 0) goto done;
+        if (entry->value && entry->value[0]) { rc = GIT_EINVALIDSPEC; goto done; }
+        git_config_entry_free(entry);
+        entry = NULL;
+    }
+    sprintf(key, "filter.%s.required", filter);
+    rc = git_config_get_bool(&required, config, key);
+    if (rc == GIT_ENOTFOUND) rc = 0;
+    else if (rc == 0 && required) rc = GIT_EINVALIDSPEC;
+
+done:
+    git_config_entry_free(entry);
+    git_config_free(config);
+    free(key);
+    return rc;
+}
 
 /* Stage one literal path. The host supplies UTF-8 bytes in /stage-path. */
 EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
@@ -31,6 +77,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
         if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;
         if (ignored) { rc = GIT_EINVALIDSPEC; goto done; }
     }
+    if ((rc = check_external_filter(repo, path)) < 0) goto done;
     rc = git_index_add_bypath(index, path);
     if (rc == GIT_ENOTFOUND && tracked) rc = git_index_remove_bypath(index, path);
     if (rc == 0) rc = git_index_write(index);
