@@ -1,0 +1,107 @@
+--- a/Python/emscripten_trampoline.c
++++ b/Python/emscripten_trampoline.c
+@@ -41,58 +41,27 @@
+ // record the offset so we can access it from JS is probably the best way.
+ EMSCRIPTEN_KEEPALIVE const int _PyEM_EMSCRIPTEN_TRAMPOLINE_OFFSET = offsetof(_PyRuntimeState, emscripten_trampoline);
+ 
+-typedef PyObject* (*TrampolineFunc)(int* success,
+-                                    PyCFunctionWithKeywords func,
+-                                    PyObject* self,
+-                                    PyObject* args,
+-                                    PyObject* kw);
++// python-html: Asyncify must unwind through the trampoline when a C function
++// waits for input. A JS or wasm-gc trampoline is a foreign frame that Asyncify
++// cannot unwind, so the call is made here in C, with the argument count that
++// the JS API reports for the function (Function.length).
++EM_JS(int, _PyEM_FunctionArity, (PyCFunctionWithKeywords func), {
++    return wasmTable.get(func).length;
++});
+ 
+-/**
+- * Backwards compatible trampoline works with all JS runtimes
+- */
+-EM_JS(PyObject*, _PyEM_TrampolineCall_JS, (PyCFunctionWithKeywords func, PyObject *arg1, PyObject *arg2, PyObject *arg3), {
+-    return wasmTable.get(func)(arg1, arg2, arg3);
+-}
+-// Try to compile wasm-gc trampoline if possible.
+-function getPyEMTrampolinePtr() {
+-    // Starting with iOS 18.3.1, WebKit on iOS has an issue with the garbage
+-    // collector that breaks the call trampoline. See #130418 and
+-    // https://bugs.webkit.org/show_bug.cgi?id=293113 for details.
+-    let isIOS = globalThis.navigator && (
+-        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+-        // Starting with iPadOS 13, iPads might send a platform string that looks like a desktop Mac.
+-        // To differentiate, we check if the platform is 'MacIntel' (common for Macs and newer iPads)
+-        // AND if the device has multi-touch capabilities (navigator.maxTouchPoints > 1)
+-        (navigator.platform === 'MacIntel' && typeof navigator.maxTouchPoints !== 'undefined' && navigator.maxTouchPoints > 1)
+-    );
+-    if (isIOS) {
+-        return 0;
++#define ARITY_SLOTS 8192
++static struct { PyCFunctionWithKeywords func; int arity; } arity_cache[ARITY_SLOTS];
++
++static int
++function_arity(PyCFunctionWithKeywords func)
++{
++    size_t slot = ((size_t)func * 2654435761u) % ARITY_SLOTS;
++    if (arity_cache[slot].func != func) {
++        arity_cache[slot].arity = _PyEM_FunctionArity(func);
++        arity_cache[slot].func = func;
+     }
+-    let trampolineModule;
+-    try {
+-        trampolineModule = getWasmTrampolineModule();
+-    } catch (e) {
+-        // Compilation error due to missing wasm-gc support, fall back to JS
+-        // trampoline
+-        return 0;
+-    }
+-    const trampolineInstance = new WebAssembly.Instance(trampolineModule, {
+-        env: { __indirect_function_table: wasmTable, memory: wasmMemory },
+-    });
+-    return addFunction(trampolineInstance.exports.trampoline_call);
++    return arity_cache[slot].arity;
+ }
+-// We have to be careful to work correctly with memory snapshots -- the value of
+-// _PyRuntimeState.emscripten_trampoline needs to reflect whether wasm-gc is
+-// available in the current runtime, not in the runtime the snapshot was taken
+-// in. This writes the appropriate value to
+-// _PyRuntimeState.emscripten_trampoline from JS startup code that runs every
+-// time, whether we are restoring a snapshot or not.
+-addOnPreRun(function setEmscriptenTrampoline() {
+-    const ptr = getPyEMTrampolinePtr();
+-    const offset = HEAP32[__PyEM_EMSCRIPTEN_TRAMPOLINE_OFFSET / 4];
+-    HEAP32[(__PyRuntime + offset) / 4] = ptr;
+-});
+-);
+ 
+ PyObject*
+ _PyEM_TrampolineCall(PyCFunctionWithKeywords func,
+@@ -100,16 +69,19 @@
+                      PyObject* args,
+                      PyObject* kw)
+ {
+-    TrampolineFunc trampoline = _PyRuntime.emscripten_trampoline;
+-    if (trampoline == 0) {
+-        return _PyEM_TrampolineCall_JS(func, self, args, kw);
+-    }
+-    int success = 1;
+-    PyObject *result = trampoline(&success, func, self, args, kw);
+-    if (!success) {
++    switch (function_arity(func)) {
++    case 0:
++        return ((PyObject* (*)(void))func)();
++    case 1:
++        return ((PyObject* (*)(PyObject*))func)(self);
++    case 2:
++        return ((PyObject* (*)(PyObject*, PyObject*))func)(self, args);
++    case 3:
++        return func(self, args, kw);
++    default:
+         PyErr_SetString(PyExc_SystemError, "Handler takes too many arguments");
++        return NULL;
+     }
+-    return result;
+ }
+ 
+ #else
