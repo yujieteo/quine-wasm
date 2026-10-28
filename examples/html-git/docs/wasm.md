@@ -589,3 +589,64 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Unstage speed.
 The measured gain is a new Wasm operation with 16 compatible path results.
+
+## Stage built-in conversion checks on 2026-10-28
+
+The Wasm Stage probe now has 12 verified conversion cases against command-line Git.
+JavaScript produces different blobs from Git in 8 of these cases.
+Libgit2 passes all 12 cases without new conversion code.
+This iteration adds compatibility evidence and retains the existing engine code.
+
+- Verify stored blob bytes and tree IDs for built-in conversions.
+  Reason: The fixture exposes 8 incorrect JavaScript results that the previous Wasm tests did not cover.
+- Verify paths that require no conversion beside paths that require conversion.
+  Reason: Automatic text detection must preserve binary bytes and existing CRLF blobs.
+- Verify file bytes, Git status and the scope of each export.
+  Reason: Correct blob bytes alone cannot exclude an incorrect file write or an unrelated index change.
+
+| Case | Git and Wasm result | JavaScript result |
+| --- | --- | --- |
+| `text` | CRLF becomes LF. | CRLF stays. |
+| `eol=lf` | CRLF becomes LF. | CRLF stays. |
+| `text eol=crlf` | Stored content uses LF. | CRLF stays. |
+| `core.autocrlf=true` | CRLF becomes LF. | CRLF stays. |
+| `core.autocrlf=input` | CRLF becomes LF. | CRLF stays. |
+| `-text` with `core.autocrlf=true` | CRLF stays. | Same result. |
+| `text=auto` with a NUL byte | Binary bytes stay. | Same result. |
+| `text=auto` with text | CRLF becomes LF. | CRLF stays. |
+| `text=auto` with an existing CRLF blob | CRLF stays. | Same result. |
+| `ident` | Expanded `$Id: ... $` becomes `$Id$`. | Expanded text stays. |
+| `ident text` | Ident contraction and CRLF conversion both apply. | Original bytes stay. |
+| `.git/info/attributes` overrides `text` with `-text` | CRLF stays. | Same result. |
+
+Each case uses a fresh repository and changes the file size after its base commit.
+The fixture sets `core.safecrlf=false` to test accepted conversions.
+It does not establish behavior for `core.safecrlf=true` refusals.
+Each Wasm export matches Git blob bytes, tree IDs and status.
+Each export preserves file bytes and writes only the index and object files.
+A second export writes zero files. Each repository passes strict fsck.
+
+The baseline passed all 28 tests. The fresh emcc and quine-wasm build passed all 29 tests.
+The syntax check and `git diff --check` passed. This repository defines no lint or format command.
+No browser or server started. The page still uses JavaScript and retains its 4 recorded interface faults.
+Real browser folder handles still need verification before an engine replacement.
+
+The separate benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 123.53 |
+| JavaScript Refresh | 106.41 |
+| JavaScript Status | 103.71 |
+| JavaScript Log | 1.01 |
+| JavaScript Tree | 1.06 |
+| JavaScript HEAD and index reads | 3.87 |
+| Wasm instance creation | 12.04 |
+| Folder import | 653.59 |
+| First libgit2 HEAD and index reads | 31.59 |
+| Unchanged bridge export | 120.79 |
+
+These read costs do not measure Stage speed.
+The measured gain is compatibility evidence for 12 cases, with 8 correct conversions that JavaScript lacks.

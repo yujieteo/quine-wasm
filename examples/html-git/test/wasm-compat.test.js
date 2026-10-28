@@ -12,6 +12,78 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 Stage matches Git for built-in text and ident conversions', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-stage-text-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const cases = [
+    { name: 'text', attr: 'text', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'eol-lf', attr: 'eol=lf', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'eol-crlf', attr: 'text eol=crlf', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'autocrlf-true', autocrlf: 'true', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'autocrlf-input', autocrlf: 'input', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'unset-text', autocrlf: 'true', attr: '-text', bytes: 'new\r\ntext\r\n' },
+    { name: 'auto-binary', attr: 'text=auto', bytes: 'new\0\r\ntext\r\n' },
+    { name: 'auto-text', attr: 'text=auto', bytes: 'new\r\ntext\r\n', stored: 'new\ntext\n' },
+    { name: 'auto-existing-crlf', attr: 'text=auto', base: 'old\r\n', bytes: 'new\r\ntext\r\n' },
+    { name: 'ident', attr: 'ident', bytes: 'new $Id: abcdef $ text\n', stored: 'new $Id$ text\n' },
+    { name: 'ident-text', attr: 'ident text', bytes: '$Id: abcdef $\r\nnew\r\n', stored: '$Id$\nnew\n' },
+    { name: 'info-override', attr: 'text', info: '-text', bytes: 'new\r\ntext\r\n' },
+  ];
+  try {
+    for (const c of cases) {
+      const actual = path.join(root, c.name);
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'core.autocrlf', 'false');
+      git(actual, 'config', 'core.safecrlf', 'false');
+      fs.writeFileSync(path.join(actual, 'file'), c.base || 'old\n');
+      git(actual, 'add', 'file');
+      git(actual, 'commit', '-m', 'Base');
+      git(actual, 'config', 'core.autocrlf', c.autocrlf || 'false');
+      if (c.attr) fs.writeFileSync(path.join(actual, '.gitattributes'), `file ${c.attr}\n`);
+      if (c.info) fs.writeFileSync(path.join(actual, '.git/info/attributes'), `file ${c.info}\n`);
+      const bytes = Buffer.from(c.bytes);
+      fs.writeFileSync(path.join(actual, 'file'), bytes);
+      const reference = actual + '-git';
+      const javascript = actual + '-js';
+      fs.cpSync(actual, reference, { recursive: true });
+      fs.cpSync(actual, javascript, { recursive: true });
+      git(reference, 'add', 'file');
+      const expected = Buffer.from(c.stored || c.bytes);
+      assert.deepEqual(execFileSync('git', ['show', ':file'], { cwd: reference, env }), expected, c.name);
+      await new (loadCore().Repo)(new NodeFS(javascript)).add(['file']);
+      assert.deepEqual(execFileSync('git', ['show', ':file'], { cwd: javascript, env }), bytes,
+        c.name + ': JavaScript preserves input bytes');
+      assert.equal(git(javascript, 'write-tree') === git(reference, 'write-tree'), !c.stored,
+        c.name + ': JavaScript conversion limit');
+      const m = await loadWasm(artifact);
+      const disk = new NodeFS(actual);
+      const writes = [];
+      const writeFile = disk.writeFile.bind(disk);
+      disk.writeFile = async (p, content) => { writes.push(p); await writeFile(p, content); };
+      const bridge = await importFolder(m, disk);
+      m.FS.writeFile('/stage-path', 'file');
+      assert.equal(m._html_git_stage_probe(), 0, c.name);
+      await bridge.flush();
+      assert.equal(git(actual, 'write-tree'), git(reference, 'write-tree'), c.name + ': Git tree');
+      assert.deepEqual(execFileSync('git', ['show', ':file'], { cwd: actual, env }), expected, c.name + ': blob bytes');
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'), c.name + ': status');
+      assert.deepEqual(fs.readFileSync(path.join(actual, 'file')), bytes, c.name + ': file bytes stay intact');
+      assert.ok(writes.includes('.git/index'));
+      assert.ok(writes.every((p) => p === '.git/index' || p.startsWith('.git/objects/')));
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      git(actual, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Unstage matches Git and JavaScript for literal paths, unborn HEAD and conflicts', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
