@@ -1,0 +1,22 @@
+--- a/Python/emscripten_syscalls.c
++++ b/Python/emscripten_syscalls.c
+@@ -47,6 +47,10 @@
+ #define EM_JS_MACROS(ret, func_name, args, body...)                            \
+   EM_JS(ret, func_name, args, body)
+ 
++// python-html: the page waits for input with Asyncify, not with JSPI. Asyncify
++// cannot instrument the externref values below, and the promising main would
++// replace the Asyncify main, so this JSPI read and poll code is left out.
++#if 0
+ EM_JS_MACROS(void, _emscripten_promising_main_js, (void), {
+     // Define FS.createAsyncInputDevice(), This is quite similar to
+     // FS.createDevice() defined here:
+@@ -285,6 +289,8 @@
+     }
+     return __block_for_int(p);
+ }
++
++#endif
+ 
+ #include <sys/ioctl.h>
+ 

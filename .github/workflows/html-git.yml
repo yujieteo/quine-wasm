@@ -1,0 +1,30 @@
+# Runs html-git's compatibility tests on each push to main and each pull request that changes examples/html-git:
+# the git engine is loaded out of index.html and checked against the real git command line.
+name: html-git
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/html-git/**'
+      - '.github/workflows/html-git.yml'
+  pull_request:
+    paths:
+      - 'examples/html-git/**'
+      - '.github/workflows/html-git.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/html-git
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test test/*.test.js
