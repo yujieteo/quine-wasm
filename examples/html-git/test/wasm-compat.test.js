@@ -12,6 +12,73 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 Stage matches Git safecrlf refusals and accepted file bytes', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-safecrlf-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const cases = [
+    { name: 'input-crlf', autocrlf: 'input', bytes: 'new\r\ntext\r\n', refuse: true },
+    { name: 'true-lf', autocrlf: 'true', bytes: 'new\ntext\n', refuse: true },
+    { name: 'true-mixed', autocrlf: 'true', bytes: 'new\r\ntext\n', refuse: true },
+    { name: 'input-lf', autocrlf: 'input', bytes: 'new\ntext\n' },
+    { name: 'true-crlf', autocrlf: 'true', bytes: 'new\r\ntext\r\n' },
+    { name: 'unset-text', autocrlf: 'true', attr: '-text', bytes: 'new\ntext\n' },
+    { name: 'binary', autocrlf: 'true', bytes: 'new\0\r\ntext\n' },
+    { name: 'warn', autocrlf: 'input', safecrlf: 'warn', bytes: 'new\r\ntext\r\n' },
+  ];
+  try {
+    for (const c of cases) {
+      const actual = path.join(root, c.name);
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'core.autocrlf', 'false');
+      fs.writeFileSync(path.join(actual, 'file'), 'old\n');
+      git(actual, 'add', 'file');
+      git(actual, 'commit', '-m', 'Base');
+      git(actual, 'config', 'core.autocrlf', c.autocrlf);
+      git(actual, 'config', 'core.safecrlf', c.safecrlf || 'true');
+      if (c.attr) fs.writeFileSync(path.join(actual, '.gitattributes'), `file ${c.attr}\n`);
+      const bytes = Buffer.from(c.bytes);
+      fs.writeFileSync(path.join(actual, 'file'), bytes);
+      const reference = actual + '-git';
+      const javascript = actual + '-js';
+      fs.cpSync(actual, reference, { recursive: true });
+      fs.cpSync(actual, javascript, { recursive: true });
+      if (c.refuse) assert.throws(() => git(reference, 'add', 'file'), /would be replaced/);
+      else git(reference, 'add', 'file');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      const before = snapshot(m);
+      m.FS.writeFile('/stage-path', 'file');
+      const rc = m._html_git_stage_probe();
+      if (c.refuse) {
+        assert.ok(rc < 0, c.name + ': unsafe conversion must fail');
+        assert.deepEqual(snapshot(m), before, c.name + ': no repository byte change');
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+        await new (loadCore().Repo)(new NodeFS(javascript)).add(['file']);
+        assert.notEqual(git(javascript, 'write-tree'), git(reference, 'write-tree'),
+          c.name + ': JavaScript accepts the refused change');
+      } else {
+        assert.equal(rc, 0, c.name);
+        await bridge.flush();
+        assert.deepEqual(execFileSync('git', ['show', ':file'], { cwd: actual, env }),
+          execFileSync('git', ['show', ':file'], { cwd: reference, env }), c.name + ': blob bytes');
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      assert.equal(git(actual, 'write-tree'), git(reference, 'write-tree'), c.name + ': Git tree');
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'), c.name + ': status');
+      assert.deepEqual(fs.readFileSync(path.join(actual, 'file')), bytes, c.name + ': file bytes');
+      git(actual, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Stage matches Git for built-in text and ident conversions', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {

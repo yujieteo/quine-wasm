@@ -650,3 +650,56 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Stage speed.
 The measured gain is compatibility evidence for 12 cases, with 8 correct conversions that JavaScript lacks.
+
+## Stage safecrlf checks on 2026-10-28
+
+Libgit2 matches Git in 8 new `core.safecrlf` cases without new engine code.
+The previous conversion test set `core.safecrlf=false` and did not test refusals.
+JavaScript accepts all 3 changes that Git and libgit2 refuse.
+
+- Compare accepted and refused Stage results with Git.
+  Reason: An engine replacement must preserve Git refusals that protect file bytes from irreversible line conversion.
+- Check repository bytes before and after each refusal.
+  Reason: A refusal must preserve the index and objects, with zero bridge writes.
+
+| Configuration and file bytes | Git and Wasm result |
+| --- | --- |
+| `safecrlf=true`, `autocrlf=input`, CRLF text | Refuse. |
+| `safecrlf=true`, `autocrlf=true`, LF text | Refuse. |
+| `safecrlf=true`, `autocrlf=true`, mixed LF and CRLF text | Refuse. |
+| `safecrlf=true`, `autocrlf=input`, LF text | Accept. |
+| `safecrlf=true`, `autocrlf=true`, CRLF text | Accept and store LF. |
+| `safecrlf=true`, `autocrlf=true`, `-text` | Accept and preserve bytes. |
+| `safecrlf=true`, `autocrlf=true`, binary bytes | Accept and preserve bytes. |
+| `safecrlf=warn`, `autocrlf=input`, CRLF text | Accept and store LF. |
+
+The test compares tree IDs and status for all cases and stored blob bytes for accepted cases.
+Every case preserves file bytes and passes strict fsck.
+Every refusal preserves all repository bytes and exports zero files.
+The warning case checks acceptance and bytes, but does not check warning text.
+Libgit2 omits the warning text in its CRLF filter.
+
+The baseline passed all 29 tests. The fresh emcc and quine-wasm build passed all 30 tests.
+The syntax check and `git diff --check` passed.
+No browser or server started. The page still uses JavaScript and retains its 4 interface faults.
+Real browser folder handles still need verification before an engine replacement.
+
+The benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 66.40 |
+| JavaScript Refresh | 56.61 |
+| JavaScript Status | 59.36 |
+| JavaScript Log | 0.71 |
+| JavaScript Tree | 0.63 |
+| JavaScript HEAD and index reads | 2.28 |
+| Wasm instance creation | 6.39 |
+| Folder import | 301.22 |
+| First libgit2 HEAD and index reads | 18.18 |
+| Unchanged bridge export | 65.35 |
+
+These read costs do not measure Stage speed.
+The measured gain is evidence for 8 compatible cases, with 3 safe refusals that JavaScript lacks.
