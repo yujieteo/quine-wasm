@@ -1242,3 +1242,59 @@ Each value is the median of 5 trials, in milliseconds. Each trial checked HEAD a
 
 These read costs do not measure Commit speed. The gain is correct Commit bytes for configured encodings.
 This run created no commit and started no browser or server.
+
+## Commit hook refusals on 2026-10-28
+
+The Commit probe now refuses possible Commit hooks before any repository write.
+The baseline test failed because Git refused a pre-commit hook, but the probe created a commit.
+JavaScript also created a commit despite that hook, so it cannot supply a correct fallback.
+
+- Check the 5 hook names that a normal Commit can call.
+  Reason: The compatibility run proved that hooks can refuse a commit or require an observable action.
+- Refuse a hook file regardless of its imported executable mode.
+  Reason: Browser folder handles omit executable modes, so MEMFS cannot establish whether Git will call the hook.
+- Refuse custom hook paths except `/dev/null`.
+  Reason: A custom path can refer to host files outside the imported folder, which the probe cannot inspect.
+
+The guard adds no shell, package, path resolver or interface control.
+It checks `pre-commit`, `prepare-commit-msg`, `commit-msg`, `post-commit` and `reference-transaction`.
+It leaves sample hooks and hooks for other operations alone.
+
+| Case | Result and evidence |
+| --- | --- |
+| Executable pre-commit, prepare-commit-msg or commit-msg | Git refuses the fixture. Wasm refuses before any repository write. |
+| Post-commit or reference-transaction | Git writes a marker through the hook. Wasm refuses because it cannot execute the hook. |
+| Non-executable pre-commit | Git ignores the file. Wasm refuses because folder handles cannot preserve the executable mode. |
+| Custom relative hook path | Git refuses through the custom pre-commit hook. Wasm refuses the unsupported path. |
+| Custom external hook path | Wasm refuses because the folder import cannot prove the absence of external hooks. |
+| Sample hook, pre-push hook or no Commit hook | Wasm commit bytes and IDs match Git. |
+| `core.hooksPath=/dev/null` with a default pre-commit hook | Git disables hooks. Wasm commit bytes and IDs match Git. |
+
+All 8 refusals preserve every repository byte and cause zero bridge writes.
+All 4 accepted cases preserve Index bytes and unstaged file bytes. A second export writes zero files.
+Each fixture passes strict fsck.
+Custom hook paths inside the project also cause refusal in this probe, even if those paths contain no hook.
+The probe cannot execute native hooks. A future host operation must supply hook support before this restriction can change.
+
+The fresh emcc and quine-wasm build passed all 40 tests without skips.
+The JavaScript syntax check and `git diff --check` passed. This repository defines no lint or format command.
+The page still uses JavaScript. Real browser folder handles still need proof before an engine replacement.
+This run created no commit and started no browser or server.
+
+The separate `test/benchmark.js` run used the packed fixture with 20 commits after the tests completed.
+Each value is the median of 5 trials, in milliseconds. Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 69.92 |
+| JavaScript Refresh | 60.76 |
+| JavaScript Status | 57.17 |
+| JavaScript Log | 0.57 |
+| JavaScript Tree | 0.54 |
+| JavaScript HEAD and Index reads | 2.20 |
+| Wasm instance creation | 6.41 |
+| Folder import | 342.32 |
+| First libgit2 HEAD and Index reads | 16.96 |
+| Unchanged bridge export | 67.22 |
+
+These read costs do not measure Commit speed. The gain is 8 safe refusals that prevent silent hook bypass.

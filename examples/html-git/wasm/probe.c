@@ -267,6 +267,34 @@ static int clean_commit_message(git_buf *out, git_config *config, const char *me
     return out->size ? 0 : GIT_EINVALIDSPEC;
 }
 
+/* Browser folder handles omit executable modes. Never bypass a possible hook. */
+static int check_commit_hooks(git_repository *repo, git_config *config)
+{
+    const char *hooks[] = { "pre-commit", "prepare-commit-msg", "commit-msg",
+        "post-commit", "reference-transaction" };
+    const char *custom;
+    const char *gitdir = git_repository_path(repo);
+    struct stat st;
+    char *path;
+    int rc = git_config_get_string(&custom, config, "core.hooksPath");
+
+    /* A custom path can refer to files outside the imported folder. */
+    if (rc == 0) return custom && !strcmp(custom, "/dev/null") ? 0 : GIT_EINVALIDSPEC;
+    if (rc != GIT_ENOTFOUND) return rc;
+    path = malloc(strlen(gitdir) + sizeof("hooks/reference-transaction"));
+    if (!path) return -1;
+    rc = 0;
+    for (size_t i = 0; i < sizeof(hooks) / sizeof(hooks[0]); i++) {
+        sprintf(path, "%shooks/%s", gitdir, hooks[i]);
+        if (stat(path, &st) == 0 || errno != ENOENT) {
+            rc = GIT_EINVALIDSPEC;
+            break;
+        }
+    }
+    free(path);
+    return rc;
+}
+
 /* Commit staged files. The host supplies a message and a Git signature. */
 EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
 {
@@ -302,6 +330,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
     /* This probe cannot sign. Refuse before tree or commit object writes. */
     if ((rc = git_repository_config_snapshot(&config, repo)) < 0) goto done;
+    if ((rc = check_commit_hooks(repo, config)) < 0) goto done;
     rc = git_config_get_bool(&sign, config, "commit.gpgsign");
     if (rc != GIT_ENOTFOUND) {
         if (rc < 0) goto done;
