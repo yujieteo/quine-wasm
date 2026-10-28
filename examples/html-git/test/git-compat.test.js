@@ -558,6 +558,12 @@ test('diff output matches git diff, and patches apply with git apply', async () 
   await repo.add(['code.js', 'gone.txt', 'nonl.txt', 'bin.dat', 'same.txt']);
   const c1 = await repo.commit({ message: 'one', ident: ME, date: tick() });
 
+  // Root comparison must work before Git stores an empty tree object.
+  assert.equal(await repo.hasObject(G.EMPTY_TREE), false);
+  const rootPatch = await repo.diff({ from: G.EMPTY_TREE, to: c1.sha });
+  assert.equal(rootPatch.text, git(dir, 'diff-tree', '--root', '--no-commit-id', '-p', c1.sha));
+  assert.ok(rootPatch.files.every((file) => file.status === 'A'));
+
   const lines = fs.readFileSync(path.join(dir, 'code.js'), 'utf8').split('\n');
   lines[10] = '  line 10 changed';
   lines[16] = '  line 16 changed';

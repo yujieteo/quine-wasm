@@ -766,6 +766,7 @@ const GitCore = (() => {
   }
 
   const MODE = { FILE: 0o100644, EXEC: 0o100755, LINK: 0o120000, GITLINK: 0o160000, TREE: 0o40000 };
+  const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
   const modeString = (m) => m.toString(8);
   function parseTree(body) {
     const entries = [];
@@ -2004,6 +2005,7 @@ const GitCore = (() => {
     // --- diff ---
     // A side of a diff: 'index', 'worktree' or a revision. Returns path -> {mode, sha, file?}.
     async diffSide(side, trackedPaths) {
+      if (side === EMPTY_TREE) return new Map();
       if (side !== 'index' && side !== 'worktree') {
         const sha = await this.resolveRev(side);
         if (!sha && side === 'HEAD' && !(await this.head()).sha) return new Map();
@@ -2411,7 +2413,7 @@ const GitCore = (() => {
   }
 
   return {
-    Repo, ObjectCache, sha1, sha1Hex, inflate, deflate, adler32, hashObject, parseIndex, serializeIndex, parseTree, serializeTree,
+    Repo, ObjectCache, EMPTY_TREE, sha1, sha1Hex, inflate, deflate, adler32, hashObject, parseIndex, serializeIndex, parseTree, serializeTree,
     parseCommit, merge3, parseIgnore, isIgnored, configGet, applyDelta,
     validBranchName, cleanMessage, diffHunks, filePatch, ZERO_SHA, enc, dec, toHex, fromHex,
   };
@@ -2789,7 +2791,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
     const stashes = await repo.stashList();
     $('stashList').replaceChildren(...(stashes.length ? stashes.map((e) => el('li', {},
       el('span', { class: 'name' }, `stash@{${e.index}}`), el('span', {}, e.message), el('span', { class: 'meta' }, relTime(e.time)),
-      el('button', { class: 'small', onclick: () => showDiff(`stash@{${e.index}}^1`, `stash@{${e.index}}`) }, 'show'),
+      el('button', { class: 'small', onclick: () => showDiff(`stash@{${e.index}}^1`, `stash@{${e.index}}`) }, 'Compare'),
       el('button', { class: 'small', onclick: () => stashAction('apply', e.index) }, 'apply'),
       el('button', { class: 'small', onclick: () => stashAction('pop', e.index) }, 'pop'),
       el('button', { class: 'small', onclick: () => stashAction('drop', e.index) }, 'drop')))
@@ -2881,7 +2883,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
           el('div', { class: 'meta mono' }, `commit ${c.sha}`, c.parents.length ? ` · parent${c.parents.length > 1 ? 's' : ''} ${c.parents.map(short).join(' ')}` : ' · root commit'),
           body ? el('details', {}, el('summary', {}, 'message body'), el('pre', {}, body)) : null,
           el('div', { class: 'row' },
-            c.parents.length ? el('button', { class: 'small', onclick: () => showDiff(c.sha + '^1', c.sha) }, 'show changes') : null,
+            el('button', { class: 'small', onclick: () => showDiff(c.parents.length ? c.sha + '^1' : GitCore.EMPTY_TREE, c.sha) }, 'Compare'),
             el('button', { class: 'small', onclick: () => restoreCommit(c.sha) }, 'Restore'),
             el('button', { class: 'small', onclick: () => restoreFilePicker(c.sha, picker).catch((e) => log(e.message, 'err')) }, 'Choose file…')), picker);
       }) : [el('li', { class: 'empty' }, 'no commits yet')]));

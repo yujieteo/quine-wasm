@@ -1,8 +1,8 @@
 # html-git concepts
 
-This document defines the current objects and records 7 faults in their actions.
+This document defines the current objects and records a decrease from 7 faults to 5.
 Phase 1 is complete. Phase 2 has a baseline. Phase 3 has not started.
-The interface and the engine stay unchanged in this iteration.
+Iteration 2 adds root Commit comparison and uses Compare for Commit and Stash controls.
 
 ## Scope and evidence
 
@@ -77,7 +77,7 @@ Reset and Restore finish in one operation and do not require separate concepts.
 Save creates a Stash from the repository's tracked files and Index.
 Start creates Merge or Rebase state through the Branch action.
 Compare on a non-root Commit uses its first parent in the current log.
-The root Commit has no Compare control. The matrix records this gap as E1.
+Compare on a root Commit uses the empty tree. The baseline matrix records the former gap as E1.
 File Restore selects its source Commit before its path.
 An absent File can still have an Index entry, such as a staged deletion.
 
@@ -155,14 +155,92 @@ Reason: The Chrome log showed the initial snapshot without the Compare action th
 This matrix does not require new actions such as Branch deletion or file content edits.
 Merge completion has its own Merge notice beside Commit, so it does not add a displacement fault.
 
-## Phase 2: State after this iteration
+## Phase 2: State after iteration 2
 
-The matrix above still describes every action location. The fault count stays at 7.
-No interface change or fault reduction occurred.
-The next interface change can address I1 with Stage and Unstage beside the same File list.
-Reason: The manual Stage run and the source audit show the separate locations directly.
-Phase 2 stays incomplete until the interface resolves the faults or the owner accepts each fault.
-Phase 3 then requires separate checks and screenshots at both widths.
+The fault count fell from 7 to 5. Phase 2 stays incomplete.
+The interface now gives every log Commit a Compare control, with the same label as Stash Compare.
+
+### Requirements after review
+
+- Give root Commits the same Compare action as other Commits.
+  Reason: The `concept-baseline` run showed no control to inspect the initial snapshot.
+- Use Compare for Commit and Stash controls.
+  Reason: The baseline matrix found two names for the same action, fault I2.
+- Accept Git's empty tree ID as a diff side without a stored object.
+  Reason: The root-patch compatibility check prevents a wrong-result fault on a new repository.
+
+The change removes the root-only control restriction and the two old Compare labels.
+It reuses the current diff view, patch code and compatibility test.
+No new dependency, command tab or test harness is necessary.
+The current test automates the root-patch comparison with command-line Git.
+
+### Matrix after the change
+
+This table replaces only the Compare column of the baseline matrix.
+All other cells keep their baseline locations and fault marks.
+
+| Object | Compare after the change | Fault change |
+| --- | --- | --- |
+| Repository | n/a | None. |
+| File | n/a | None. |
+| Index | diff `diffMode`, separate from `stagedList` | D1 stays. |
+| Commit | Every log row has `Compare`. Root rows compare with the empty tree. Other rows compare with their first parent. | E1 removed. |
+| Branch | n/a | None. |
+| Stash | Each Stash row has `Compare`. | I2 removed. |
+| Merge | n/a | None. |
+| Rebase | n/a | None. |
+
+The faults that remain are I1, D1, D2, D3 and D4.
+Thus the count is 4 displaced actions, 1 inconsistent action and 0 expected empty cells.
+The next interface candidate is Stage and Unstage beside the same File list.
+Reason: The baseline run and source audit show two locations for opposite File actions.
+
+### Evidence from the Compare run
+
+The Chrome run `compare-controls` used `file://` and memory directory handles on 2026-10-28.
+The fixture had 2 Commits, 1 Stash and `sample.txt`.
+It used the page's `HandleFS` adapter. It did not prove real folder access.
+The run checked the controls at 375 px and 1280 px.
+The root Compare control showed `1 file changed: 1 added` and `+first line`.
+The non-root Compare control showed the change from `first line` to `second line`.
+The Stash Compare control showed the change from `second line` to `saved change`.
+The root control also produced the same result at 375 px.
+
+The compatibility run passed all 19 tests.
+The root-patch check compared text and binary additions with `git diff-tree --root --no-commit-id -p`.
+The check also proved that the repository had no stored empty tree object before the comparison.
+The patch matched Git exactly.
+
+The benchmark used 10,000 files, 20 Commits and 1 pack with 10,178 objects.
+Both versions used the same clean fixture and HEAD `76034bd84903dac2957550a7c1e50d9db14f9f08`.
+The baseline came from the current HEAD before this change.
+Each value is the median of 5 trials from `test/benchmark.js`, in milliseconds.
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Open | 60.98 | 62.22 |
+| Refresh | 55.78 | 52.50 |
+| Status | 51.92 | 50.05 |
+| Log | 0.60 | 0.49 |
+| Tree | 0.62 | 0.54 |
+
+These results do not establish a speed change. The benchmark does not time Compare.
+The first benchmark attempt overlapped automatic Git maintenance and failed with an absent object.
+The final run used a completed foreground pack and no automatic maintenance.
+
+The screenshots use the app's current design system.
+They preserve the current layout because this change addresses matrix faults in Phase 2.
+
+| Screen | Before, 375 px | After, 375 px | Before, 1280 px | After, 1280 px |
+| --- | --- | --- | --- | --- |
+| Commit log | [Before](evidence/compare/log-before-375.png) | [After](evidence/compare/log-after-375.png) | [Before](evidence/compare/log-before-1280.png) | [After](evidence/compare/log-after-1280.png) |
+| Stash list | [Before](evidence/compare/stash-before-375.png) | [After](evidence/compare/stash-after-375.png) | [Before](evidence/compare/stash-before-1280.png) | [After](evidence/compare/stash-after-1280.png) |
+
+Chrome's resize command stopped at 500 px despite the 375 px request.
+Viewport emulation produced the required 375 px screenshots. The image dimensions confirm each width.
+The screenshot command reported an error after it wrote the emulated images. Image inspection confirmed their content.
+Phase 3 has not started because Phase 2 still has faults. No Phase 3 check has a pass result.
+The browser session stopped after the run.
 
 ## Engine boundary for a later iteration
 
@@ -172,5 +250,5 @@ Its only file under `docs/` is the SQLite example HTML file.
 The repository must not enter that JSON store. MEMFS will hold a temporary copy of the selected folder.
 Reason: A saved copy of repository data inside the HTML file breaks the shared repository requirement.
 The folder adapter will remain responsible for reads and changed-file writes to disk.
-This iteration does not build libgit2, select a Wasm operation or measure engine speed.
+This iteration does not build libgit2 or replace a JavaScript operation with Wasm.
 The existing `test/git-compat.test.js` and `test/benchmark.js` remain the comparison tools for that work.
