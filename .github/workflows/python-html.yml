@@ -1,12 +1,21 @@
-name: ci
+name: python-html
 on:
   push:
     branches: [main]
+    paths:
+      - 'examples/python-html/**'
+      - '.github/workflows/python-html.yml'
   pull_request:
+    paths:
+      - 'examples/python-html/**'
+      - '.github/workflows/python-html.yml'
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/python-html
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
@@ -24,6 +33,6 @@ jobs:
         with:
           name: pages-and-results
           path: |
-            build/python.html
-            build/python-sci.html
-            test-results/
+            examples/python-html/build/python.html
+            examples/python-html/build/python-sci.html
+            examples/python-html/test-results/

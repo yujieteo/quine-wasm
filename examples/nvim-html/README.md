@@ -72,7 +72,7 @@ The build does these steps:
 - All files are in memory (MEMFS). The runtime is a read-only gzip block, which the page unpacks with `DecompressionStream`.
 - The user files are in a JSON block (`<script id="store">`) in the page. Save writes a new page with a new store block.
 
-The page format follows the store and save design of [quine-wasm](https://github.com/yujieteo/quine-wasm).
+The page format follows the store and save design of [quine-wasm](../../README.md).
 quine-wasm is a general tool for single-file WebAssembly apps that keep their files in the page.
 
 ## Test

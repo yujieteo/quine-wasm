@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   BabyDig - search your files by what is in them, in one HTML file.
-  https://github.com/yujieteo/babydig
+  https://github.com/yujieteo/quine-wasm/tree/main/examples/babydig
   Copyright (c) 2026 Yu Jie Teo. MIT License.
   Contains: potion-base-8M by Minish Lab (MIT License), quantized to 6 bits;
             PDF.js by Mozilla (Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0),

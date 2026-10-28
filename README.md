@@ -4,9 +4,17 @@ Turn an Emscripten program into one portable HTML file whose files travel inside
 
 quine-wasm puts your files inside the HTML file. When you copy the file, you copy the files.
 It is a general tool. It is not specific to one program.
-For example, [nvim-html](https://github.com/yujieteo/nvim-html) uses it to put Neovim, a Lua config and plugins in one HTML file.
+For example, [nvim-html](examples/nvim-html) uses it to put Neovim, a Lua config and plugins in one HTML file.
 
 Try it with no build: download [docs/sqlite.html](docs/sqlite.html), open it from disk, and type SQL.
+
+More single-file HTML programs are in `examples/`:
+
+- [python-html](examples/python-html): CPython 3.14 and a notebook, linked with the quine-wasm CLI.
+- [nvim-html](examples/nvim-html): Neovim with a Lua config and plugins, with the quine-wasm store and save design.
+- [html-git](examples/html-git): Git in one HTML file that reads and writes a real `.git` folder. It does not use quine-wasm.
+- [plyhouse](examples/plyhouse): laminate homogenisation, a Goose solver in WebAssembly. It does not use quine-wasm.
+- [babydig](examples/babydig): search files by what is in them, with the model inside the file. It does not use quine-wasm.
 
 ## Why
 

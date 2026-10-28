@@ -1,11 +1,20 @@
-name: test
+name: nvim-html
 on:
   pull_request:
+    paths:
+      - 'examples/nvim-html/**'
+      - '.github/workflows/nvim-html.yml'
   push:
     branches: [main]
+    paths:
+      - 'examples/nvim-html/**'
+      - '.github/workflows/nvim-html.yml'
 jobs:
   playwright:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/nvim-html
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
