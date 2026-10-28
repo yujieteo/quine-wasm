@@ -396,3 +396,51 @@ Each value is the median of 5 trials, in milliseconds.
 | Unchanged bridge export | 68.78 |
 
 These read costs do not measure Stage speed. The measured gain is correct executable modes, rather than faster reads.
+
+## Stage conflict fault on 2026-10-28
+
+Stage now accepts conflicted paths, including ignored paths and deleted paths.
+The new merge fixture failed before the change because Stage returned `GIT_EINVALIDSPEC` for `ignored.log`.
+The probe checked only index stage 0 and treated that conflicted path as untracked.
+Git stores unresolved conflicts at index stages 1, 2 and 3.
+
+- Check all index stages before Stage treats a path as untracked.
+  Reason: The merge fixture exposed a refused path that Git and JavaScript both accepted.
+
+The change replaces the stage-0 test with a search through stages 0 to 3.
+Libgit2 then resolves the conflict through its existing add or remove operation.
+No new operation, package or interface control enters the application.
+
+The test creates 5 content conflicts with command-line Git.
+It resolves edited and deleted paths, with an ignored path in each case.
+It preserves the unselected conflict until the final Stage call.
+After each export, index entries and status match Git and JavaScript.
+Each result retains `MERGE_HEAD` and passes `git fsck --full --strict`.
+The final tree matches both engines.
+The bridge writes only index and object files, and an unchanged export writes zero files.
+
+The baseline passed all 24 tests. The new fixture failed before the change and passed after the change.
+The quine-wasm build passed. All 25 tests passed with an explicit Wasm artifact path.
+The syntax check and `git diff --check` passed.
+No browser or server started. The application engine and its 4 interface faults stay unchanged.
+Real browser folder handles and attribute behavior still need checks before an engine replacement.
+
+The separate benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 117.96 |
+| JavaScript Refresh | 104.61 |
+| JavaScript Status | 103.99 |
+| JavaScript Log | 0.80 |
+| JavaScript Tree | 0.85 |
+| JavaScript HEAD and index reads | 3.72 |
+| Wasm instance creation | 9.00 |
+| Folder import | 533.44 |
+| First libgit2 HEAD and index reads | 30.96 |
+| Unchanged bridge export | 115.65 |
+
+These read costs do not measure Stage speed.
+The measured gain is correct conflict resolution for paths that the probe previously refused.

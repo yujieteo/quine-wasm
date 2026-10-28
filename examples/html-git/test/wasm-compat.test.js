@@ -281,3 +281,70 @@ test('libgit2 Stage exports selected literal paths with the same tree as Git and
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('libgit2 Stage resolves selected merge conflicts, including ignored and deleted paths', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-stage-conflict-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    const actual = path.join(root, 'actual');
+    fs.mkdirSync(actual);
+    git(actual, 'init', '-b', 'main');
+    git(actual, 'config', 'core.autocrlf', 'false');
+    const paths = ['edit', 'ignored.log', 'delete', 'ignored-delete.log', 'unselected'];
+    for (const p of paths) fs.writeFileSync(path.join(actual, p), 'base\n');
+    git(actual, 'add', '.');
+    git(actual, 'commit', '-m', 'Base');
+    git(actual, 'checkout', '-b', 'topic');
+    for (const p of paths) fs.writeFileSync(path.join(actual, p), 'topic\n');
+    git(actual, 'commit', '-am', 'Topic');
+    git(actual, 'checkout', 'main');
+    for (const p of paths) fs.writeFileSync(path.join(actual, p), 'main\n');
+    git(actual, 'commit', '-am', 'Main');
+    assert.throws(() => git(actual, 'merge', 'topic'));
+    assert.equal(git(actual, 'ls-files', '--unmerged').trim().split('\n').length, 15);
+    const mergeHead = git(actual, 'rev-parse', 'MERGE_HEAD');
+    fs.writeFileSync(path.join(actual, '.gitignore'), '*.log\n');
+    for (const p of paths) {
+      if (p.includes('delete')) fs.unlinkSync(path.join(actual, p));
+      else fs.writeFileSync(path.join(actual, p), 'resolved\n');
+    }
+    const reference = path.join(root, 'git');
+    const javascript = path.join(root, 'javascript');
+    fs.cpSync(actual, reference, { recursive: true });
+    fs.cpSync(actual, javascript, { recursive: true });
+    const repo = new (loadCore().Repo)(new NodeFS(javascript));
+    const disk = new NodeFS(actual);
+    const writes = [];
+    const writeFile = disk.writeFile.bind(disk);
+    disk.writeFile = async (p, bytes) => { writes.push(p); await writeFile(p, bytes); };
+    for (const p of paths) {
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, disk);
+      m.FS.writeFile('/stage-path', p);
+      assert.equal(m._html_git_stage_probe(), 0, p);
+      await bridge.flush();
+      git(reference, 'add', '--', p);
+      await repo.add([p]);
+      const entries = git(actual, 'ls-files', '--stage');
+      assert.equal(entries, git(reference, 'ls-files', '--stage'), p + ': Git index');
+      assert.equal(entries, git(javascript, 'ls-files', '--stage'), p + ': JavaScript index');
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.equal(git(actual, 'rev-parse', 'MERGE_HEAD'), mergeHead);
+      if (p !== 'unselected') assert.match(git(actual, 'ls-files', '--unmerged'), /\tunselected\n/);
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      git(actual, 'fsck', '--full', '--strict');
+    }
+    assert.equal(git(actual, 'write-tree'), git(reference, 'write-tree'));
+    assert.equal(git(actual, 'write-tree'), git(javascript, 'write-tree'));
+    assert.ok(writes.every((p) => p === '.git/index' || p.startsWith('.git/objects/')));
+    assert.equal(fs.readFileSync(path.join(actual, 'ignored.log'), 'utf8'), 'resolved\n');
+    assert.equal(fs.existsSync(path.join(actual, 'ignored-delete.log')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -23,7 +23,10 @@ EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
     /* Folder handles omit modes. Preserve index modes, as the JS engine does. */
     if ((rc = git_index_set_caps(index,
             git_index_caps(index) | GIT_INDEX_CAPABILITY_NO_FILEMODE)) < 0) goto done;
-    tracked = git_index_get_bypath(index, path, 0) != NULL;
+    tracked = 0;
+    for (int stage = 0; stage <= 3; stage++) {
+        if (git_index_get_bypath(index, path, stage)) { tracked = 1; break; }
+    }
     if (!tracked) {
         if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;
         if (ignored) { rc = GIT_EINVALIDSPEC; goto done; }
