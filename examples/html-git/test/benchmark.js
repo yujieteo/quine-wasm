@@ -3,6 +3,8 @@
 const { performance } = require('node:perf_hooks');
 const { loadCore, NodeFS } = require('./load-core');
 const { execFileSync } = require('node:child_process');
+const { loadWasm, copyToMemfs } = require('./load-wasm');
+const assert = require('node:assert/strict');
 const root = process.argv[2];
 if (!root) throw new Error('Usage: node test/benchmark.js <packed-repository>');
 const G = loadCore(process.argv[3]);
@@ -16,6 +18,19 @@ const G = loadCore(process.argv[3]);
   await measure('open', refresh);
   await measure('refresh', refresh);
   for (const [name, fn] of [['status', () => repo.status()], ['log', () => repo.resolveRev('HEAD').then((sha) => repo.log(sha, 100))], ['tree', () => repo.graph({ limit: 100 })]]) await measure(name, fn);
+  if (process.env.HTML_GIT_WASM) {
+    await measure('jsHeadAndIndex', async () => {
+      await repo.readCommit(await repo.resolveRev('HEAD'));
+      await repo.readIndex();
+    });
+    let wasm;
+    await measure('wasmInstantiate', async () => { wasm = await loadWasm(process.env.HTML_GIT_WASM); });
+    await measure('wasmCopy', () => copyToMemfs(wasm, root));
+    await measure('wasmHeadAndIndex', () => assert.equal(wasm._html_git_probe(), 0));
+    const result = wasm.FS.readFile('/probe-result', { encoding: 'utf8' }).split('\n');
+    assert.equal(result[0], await repo.resolveRev('HEAD'));
+    assert.equal(result[1], (await repo.readCommit(result[0])).tree);
+  }
   runs.push(times);
   }
   const times = Object.fromEntries(Object.keys(runs[0]).map((key) => [key, runs.map((r) => r[key]).sort((a,b) => a-b)[2]]));

@@ -60,6 +60,9 @@ The Latin subset of Inter is embedded as base64 in `index.html`.
 IDs, paths and diffs use a system monospace font.
 The page needs no build step.
 
+A separate [libgit2 Wasm probe](docs/wasm.md) tests the emcc and quine-wasm build path.
+The probe does not replace the page engine yet.
+
 The engine reads loose objects, pack index version 2, ofs-delta and ref-delta objects,
 loose refs, packed refs, reflogs, and index versions 2 and 3.
 It writes index version 2.
