@@ -12,17 +12,25 @@
       mem.mkdir('/repo' + (rel ? '/' + rel : ''));
       const entries = await disk.readdir(rel);
       if (!entries) throw new Error('Folder disappeared: ' + rel);
+      const files = [];
       for (const entry of entries) {
         const p = rel ? rel + '/' + entry.name : entry.name;
         if (entry.kind === 'directory') {
           before.set(p, null);
           await copy(p);
         } else if (entry.kind === 'file') {
+          files.push(p);
+        } else throw new Error('Unsupported path: ' + p);
+      }
+      for (let i = 0; i < files.length; i += 8) {
+        const results = await Promise.allSettled(files.slice(i, i + 8).map(async (p) => {
           const bytes = await disk.readFile(p);
           if (bytes === null) throw new Error('File disappeared: ' + p);
           before.set(p, new Uint8Array(bytes));
           mem.writeFile('/repo/' + p, bytes);
-        } else throw new Error('Unsupported path: ' + p);
+        }));
+        const failed = results.find((result) => result.status === 'rejected');
+        if (failed) throw failed.reason;
       }
     }
     await copy('');

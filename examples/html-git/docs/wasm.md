@@ -245,3 +245,46 @@ Thus the new import costs more time. These runs do not establish browser times.
 The unchanged export scans MEMFS but performs zero disk writes.
 Each trial checked HEAD and tree IDs against JavaScript.
 The next browser check must measure import and export separately.
+
+## Concurrent folder reads on 2026-10-28
+
+The bridge now imports files in batches of 8 concurrent reads.
+It preserves the same bytes, empty folders and export checks.
+The application still uses its JavaScript engine.
+
+- Remove the separate wait for each file read.
+  Reason: The baseline benchmark required 681.69 ms to import the packed fixture through the adapter.
+- Limit each batch to 8 reads and finish the batch before an error returns.
+  Reason: This prevents excess open files and MEMFS writes after the caller receives an import error.
+
+The change adds no package, option or disk write.
+Folder traversal stays sequential, so nested folders cannot increase the read limit.
+The test confirms concurrent reads, exact file bytes, empty folders and an unchanged export with zero writes.
+It also forces a read error and confirms that all active reads finish before import rejects.
+The bridge starts no further batch after that error.
+
+The benchmark used a new packed fixture with 10,001 tracked files and 20 commits.
+Both runs used the same fixture and the median of 5 trials.
+The after run ran separately from the tests.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Before, ms | After, ms |
+| --- | ---: | ---: |
+| JavaScript Open | 63.00 | 70.81 |
+| JavaScript Refresh | 55.38 | 61.09 |
+| JavaScript Status | 58.26 | 61.68 |
+| JavaScript Log | 0.46 | 0.60 |
+| JavaScript Tree | 0.57 | 0.76 |
+| JavaScript HEAD, commit and index reads | 1.98 | 2.31 |
+| Wasm instance creation | 5.13 | 5.64 |
+| Folder import | 681.69 | 358.28 |
+| First libgit2 HEAD, commit and index reads | 17.34 | 17.72 |
+| Unchanged bridge export | 63.73 | 72.96 |
+
+Import time fell by 47% in this Node adapter test.
+This result does not establish browser times.
+The earlier fixture and host load differed, so these values do not replace the iteration 7 results.
+The emcc and quine-wasm build passed, and all 23 tests passed with an explicit Wasm artifact path.
+Syntax checks and `git diff --check` passed.
+No browser or server started in this iteration.
+Real browser folder handles still require verification before the page replaces JavaScript Init.

@@ -123,6 +123,47 @@ test('libgit2 quine probe matches Git and JavaScript without repository writes',
 });
 
 
+test('folder import bounds concurrent reads and settles reads before an error returns', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-import-'));
+  try {
+    const disk = new NodeFS(root);
+    for (let i = 0; i < 19; i++) await disk.writeFile('file' + i, 'Bytes ' + i);
+    await disk.mkdir('empty');
+    let active = 0, peak = 0, reads = 0, fail = false;
+    const readFile = disk.readFile.bind(disk);
+    disk.readFile = async (p) => {
+      active++;
+      peak = Math.max(peak, active);
+      reads++;
+      try {
+        if (fail && reads === 1) throw new Error('Read refused');
+        await new Promise(setImmediate);
+        return await readFile(p);
+      } finally { active--; }
+    };
+    const m = await loadWasm(artifact);
+    const bridge = await importFolder(m, disk);
+    assert.equal(peak, 8, 'reads overlap within the batch limit');
+    assert.equal(active, 0);
+    assert.equal(reads, 19);
+    for (let i = 0; i < 19; i++) {
+      assert.equal(m.FS.readFile('/repo/file' + i, { encoding: 'utf8' }), 'Bytes ' + i);
+    }
+    assert.ok(m.FS.isDir(m.FS.stat('/repo/empty').mode));
+    assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    fail = true;
+    reads = 0;
+    const fresh = await loadWasm(artifact);
+    await assert.rejects(importFolder(fresh, disk), /Read refused/);
+    assert.equal(active, 0, 'no read can alter MEMFS after import rejects');
+    assert.equal(reads, 8, 'a failed batch prevents further reads');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('folder bridge writes only changed bytes and refuses external edits before any write', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
