@@ -20,6 +20,9 @@ EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
     if ((rc = git_libgit2_init()) < 0) { free(path); return rc; }
     if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
     if ((rc = git_repository_index(&index, repo)) < 0) goto done;
+    /* Folder handles omit modes. Preserve index modes, as the JS engine does. */
+    if ((rc = git_index_set_caps(index,
+            git_index_caps(index) | GIT_INDEX_CAPABILITY_NO_FILEMODE)) < 0) goto done;
     tracked = git_index_get_bypath(index, path, 0) != NULL;
     if (!tracked) {
         if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;

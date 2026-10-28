@@ -225,11 +225,13 @@ test('libgit2 Stage exports selected literal paths with the same tree as Git and
     fs.mkdirSync(actual);
     git(actual, 'init', '-b', 'main');
     git(actual, 'config', 'core.autocrlf', 'false');
-    for (const p of ['edit', 'delete', 'unselected', 'tracked.log']) fs.writeFileSync(path.join(actual, p), 'old\n');
+    git(actual, 'config', 'core.filemode', 'true');
+    for (const p of ['edit', 'delete', 'unselected', 'tracked.log', 'executable']) fs.writeFileSync(path.join(actual, p), 'old\n');
+    fs.chmodSync(path.join(actual, 'executable'), 0o755);
     git(actual, 'add', '.');
     git(actual, 'commit', '-m', 'First');
     fs.writeFileSync(path.join(actual, '.gitignore'), '*.log\n');
-    for (const p of ['edit', 'unselected', 'tracked.log', 'ignored.log', 'ünïcode name', '[ab].txt', 'a.txt']) {
+    for (const p of ['edit', 'unselected', 'tracked.log', 'ignored.log', 'ünïcode name', '[ab].txt', 'a.txt', 'executable']) {
       fs.writeFileSync(path.join(actual, p), 'new\n');
     }
     fs.writeFileSync(path.join(actual, 'binary'), Buffer.from([0, 255, 1]));
@@ -243,7 +245,7 @@ test('libgit2 Stage exports selected literal paths with the same tree as Git and
     const writes = [];
     const writeFile = disk.writeFile.bind(disk);
     disk.writeFile = async (p, bytes) => { writes.push(p); await writeFile(p, bytes); };
-    for (const p of ['edit', 'delete', 'tracked.log', 'ünïcode name', '[ab].txt', 'binary']) {
+    for (const p of ['executable', 'edit', 'delete', 'tracked.log', 'ünïcode name', '[ab].txt', 'binary']) {
       const m = await loadWasm(artifact);
       const bridge = await importFolder(m, disk);
       m.FS.writeFile('/stage-path', p);
@@ -261,6 +263,10 @@ test('libgit2 Stage exports selected literal paths with the same tree as Git and
     assert.equal(fs.readFileSync(path.join(actual, 'unselected'), 'utf8'), 'new\n');
     assert.equal(git(actual, 'show', ':unselected'), 'old\n');
     assert.equal(git(actual, 'ls-files', '--', 'a.txt'), '');
+    assert.match(git(actual, 'ls-files', '--stage', '--', 'executable'), /^100755 /);
+    assert.match(git(actual, 'ls-files', '--stage', '--', 'edit'), /^100644 /);
+    assert.match(git(actual, 'ls-files', '--stage', '--', 'binary'), /^100644 /);
+    assert.equal(git(actual, 'config', '--bool', 'core.filemode').trim(), 'true');
     const m = await loadWasm(artifact);
     const bridge = await importFolder(m, disk);
     for (const p of ['ignored.log', 'absent']) {

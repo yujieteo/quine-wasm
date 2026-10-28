@@ -334,7 +334,7 @@ The baseline passed all 23 tests.
 Syntax checks and `git diff --check` passed. This repository defines no lint or format command.
 No browser or server started in this iteration.
 The real browser folder check remains necessary before the page replaces a JavaScript operation.
-Executable modes, attributes and conflict resolution need separate Stage checks before that replacement.
+Attributes and conflict resolution need separate Stage checks before that replacement.
 The interface retains its 4 recorded faults.
 
 ### Read benchmark
@@ -357,3 +357,42 @@ Each trial checked HEAD and tree IDs against JavaScript.
 | Unchanged bridge export | 109.45 | 98.03 |
 
 These measurements cover reads and an unchanged export. They do not measure Stage speed or establish a speed gain.
+
+## Stage executable mode fault on 2026-10-28
+
+Stage now preserves the executable mode from the index.
+The new executable fixture failed before the change because Wasm produced a different tree from Git.
+The folder bridge copies file bytes but cannot obtain executable modes from browser folder handles.
+MEMFS supplies a regular file mode, which libgit2 previously trusted instead of the index mode.
+
+- Preserve index modes when Stage reads bytes from MEMFS.
+  Reason: The executable fixture exposed a wrong tree after Stage, despite correct file bytes.
+
+The probe now sets `GIT_INDEX_CAPABILITY_NO_FILEMODE` on its index object.
+It retains the other index capabilities and leaves repository config intact.
+The same fixture now passes against Git and JavaScript.
+The test checks executable mode `100755`, regular mode `100644`, and new file mode `100644`.
+It also checks that `core.filemode` stays true.
+The existing tree, status, changed-file export and strict fsck checks cover all 7 selected paths.
+
+The quine-wasm build passed. All 24 tests passed with an explicit Wasm artifact path.
+The syntax check and `git diff --check` passed.
+No browser or server started. The application engine stays unchanged.
+
+The separate benchmark used the same 10,001-file, 20-commit packed fixture after the tests completed.
+Each value is the median of 5 trials, in milliseconds.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 63.68 |
+| JavaScript Refresh | 57.78 |
+| JavaScript Status | 54.84 |
+| JavaScript Log | 0.48 |
+| JavaScript Tree | 0.59 |
+| JavaScript HEAD and index reads | 2.16 |
+| Wasm instance creation | 6.09 |
+| Folder import | 359.99 |
+| First libgit2 HEAD and index reads | 17.74 |
+| Unchanged bridge export | 68.78 |
+
+These read costs do not measure Stage speed. The measured gain is correct executable modes, rather than faster reads.
