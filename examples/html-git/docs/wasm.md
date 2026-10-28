@@ -1038,3 +1038,51 @@ Each trial checked HEAD and tree IDs against JavaScript.
 | Folder import | 298.00 |
 | First libgit2 HEAD and Index reads | 17.18 |
 | Unchanged bridge export | 63.97 |
+
+## File Compare attribute cost on 2026-10-28
+
+File Compare now reads both conversion attributes in one libgit2 call per path.
+The shared Stage check uses `git_attr_get_many` instead of 2 separate `git_attr_get` calls.
+This change removes the duplicate search through attribute files.
+It adds no package, cache, interface control or engine operation.
+
+- Read both conversion attributes in one call.
+  Reason: The baseline benchmark measured 809.30 ms for Wasm File Compare on 10,001 tracked files.
+- Retain the conversion refusals.
+  Reason: Unsupported filters and encodings can cause incorrect blob and patch bytes.
+
+The operation benchmark used the same packed fixture before and after the change.
+The fixture contains 10,001 tracked files and 20 commits, with unstaged edits to 100 files.
+Each value is the median of 5 trials.
+Both engines matched Git's 16,350-byte patch in every trial, with zero bridge writes.
+
+| Engine | Before, ms | After, ms |
+| --- | ---: | ---: |
+| JavaScript File Compare | 125.97 | 121.95 |
+| Wasm File Compare | 809.30 | 616.92 |
+
+Wasm File Compare took 24% less time but remained slower than JavaScript.
+These times include patch reads but exclude instance creation, folder import and export.
+This result does not establish a gain in total operation time.
+
+The fresh emcc and quine-wasm build passed all 37 tests with no skipped tests.
+The tests include Stage conversion precedence and File Compare refusals for unsupported filters and encodings.
+JavaScript syntax checks and `git diff --check` passed. This repository defines no lint or format command.
+The page still uses JavaScript. This run created no commit and started no browser or server.
+
+The separate read benchmark used the unchanged packed fixture after the tests completed.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 62.43 |
+| JavaScript Refresh | 54.82 |
+| JavaScript Status | 54.52 |
+| JavaScript Log | 0.43 |
+| JavaScript Tree | 0.52 |
+| JavaScript HEAD and Index reads | 2.02 |
+| Wasm instance creation | 5.48 |
+| Folder import | 278.25 |
+| First libgit2 HEAD and Index reads | 16.25 |
+| Unchanged bridge export | 59.18 |

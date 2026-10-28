@@ -9,7 +9,9 @@
 /* Libgit2 omits encoding conversion and external filter commands. */
 static int check_stage_attributes(git_repository *repo, const char *path)
 {
-    const char *filter, *encoding;
+    const char *names[] = { "working-tree-encoding", "filter" };
+    const char *values[2];
+    const char *filter;
     const char *commands[] = { "clean", "process" };
     git_config *config = NULL;
     git_config_entry *entry = NULL;
@@ -23,9 +25,9 @@ static int check_stage_attributes(git_repository *repo, const char *path)
     rc = stat(fullpath, &st);
     free(fullpath);
     if (rc < 0) return errno == ENOENT ? 0 : -1;
-    if ((rc = git_attr_get(&encoding, repo, 0, path, "working-tree-encoding")) < 0) return rc;
-    if (GIT_ATTR_HAS_VALUE(encoding)) return GIT_EINVALIDSPEC;
-    if ((rc = git_attr_get(&filter, repo, 0, path, "filter")) < 0) return rc;
+    if ((rc = git_attr_get_many(values, repo, 0, path, 2, names)) < 0) return rc;
+    if (GIT_ATTR_HAS_VALUE(values[0])) return GIT_EINVALIDSPEC;
+    filter = values[1];
     if (!GIT_ATTR_HAS_VALUE(filter)) return 0;
     if ((rc = git_repository_config_snapshot(&config, repo)) < 0) return rc;
     key = malloc(strlen(filter) + sizeof("filter..required"));
