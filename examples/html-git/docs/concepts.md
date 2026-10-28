@@ -1,8 +1,8 @@
 # html-git concepts
 
-This document defines the current objects and records a decrease from 7 faults to 4.
-Phase 1 is complete. Phase 2 has 4 faults. Phase 3 has not started.
-Iteration 3 puts Stage and Unstage beside one File list. Iteration 2 added consistent Commit and Stash comparison.
+This document defines the current objects and records a decrease from 7 faults to 3.
+Phase 1 is complete. Phase 2 has 3 faults. Phase 3 has not started.
+Iteration 22 puts Index comparison beside its file list. Iteration 3 combined the File lists. Iteration 2 added consistent Commit and Stash comparison.
 
 ## Scope and evidence
 
@@ -351,3 +351,83 @@ Reason: A saved copy of repository data inside the HTML file breaks the shared r
 The folder adapter will remain responsible for reads and changed-file writes to disk.
 This iteration does not build libgit2 or replace a JavaScript operation with Wasm.
 The existing `test/git-compat.test.js` and `test/benchmark.js` remain the comparison tools for that work.
+
+## Phase 2 update: Index comparison on 2026-10-28
+
+The Index list now has Compare controls, which reduce the current matrix fault count from 4 to 3.
+The baseline Commit panel showed the Index paths but required a separate tab choice and mode choice for comparison.
+
+- Put both Index comparisons beside the Index list.
+  Reason: Fault D1 and the Chrome baseline show no Compare control beside the staged paths.
+- Preserve the existing diff view and engine.
+  Reason: The Git comparison run verifies both patch directions without a second diff implementation.
+
+The change adds no diff renderer, selection state or engine operation.
+Both controls select the correct mode in the existing diff view.
+The controls replace the separate tab choice and mode choice with 1 action from the Index list.
+The Index heading names the object and retains the staged changes label.
+The controls remain available for an empty Index because files can differ from an empty Index.
+
+### Object-action matrix before and after
+
+This row replaces the Index Compare cell in the complete matrix above.
+All other cells retain their previous state.
+
+| Object | Action | Before | After |
+| --- | --- | --- | --- |
+| Index | Compare with HEAD or files | D1: Separate diff tab and mode selector. | Compare with HEAD and Compare with files beside `stagedList`. |
+
+The before count is 4 displaced actions, 0 inconsistent actions and 0 expected empty cells.
+The after count is 3 displaced actions, 0 inconsistent actions and 0 expected empty cells.
+D2, D3 and D4 remain on Branch objects.
+Phase 3 does not start because Phase 2 still has these faults.
+These local checks do not constitute a Phase 3 pass.
+
+### Chrome evidence
+
+The manual run used `file://`, offline network mode and memory directory handles through the page's `HandleFS` adapter.
+The fixture had a staged edit and a further unstaged edit in the same file.
+A second fixture had unborn HEAD, a staged new file and a further unstaged edit.
+These checks prove the controls and diff output. They do not prove real folder access.
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Compare with HEAD | Pass | The patch matches `git diff --cached` for normal and unborn HEAD. |
+| Compare with files | Pass | The patch matches `git diff` for both fixtures. |
+| Previous commit comparison | Pass | Each control replaces the commits mode and ignores invalid values in its revision fields. |
+| Repository bytes | Pass | Both controls preserve every byte in the normal fixture, including the index and refs. |
+| Clean repository | Pass | Both controls show `no differences` and hide the patch. |
+| Width at 375 px | Pass | Both normal comparisons pass with `innerWidth = scrollWidth = 375`. |
+| Width at 1280 px | Pass | Both normal comparisons pass with `innerWidth = scrollWidth = 1280`. |
+| Offline resources | Pass | The resource list stays empty during both comparisons at both widths. |
+| Compatibility | Pass | All 33 tests pass before and after the change, with no skipped tests. |
+
+The screenshots use the existing app CSS and embedded font because the controls serve this app.
+This is the project design source. No external style or library enters the page.
+
+| Screen | Before | After |
+| --- | --- | --- |
+| Index at 375 px | [Before](evidence/index/index-before-375.png) | [After](evidence/index/index-after-375.png) |
+| Index at 1280 px | [Before](evidence/index/index-before-1280.png) | [After](evidence/index/index-after-1280.png) |
+
+The screenshot command reported an error after it wrote each image.
+Visual inspection confirmed the controls, and image headers confirmed the required dimensions.
+
+### Benchmark
+
+The read-only benchmark used the same packed repository with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+The before run loaded the baseline HTML. The after run loaded the changed HTML.
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Open | 69.00 | 73.53 |
+| Refresh | 58.86 | 70.13 |
+| Status | 55.59 | 61.98 |
+| Log | 0.47 | 0.65 |
+| Tree | 0.55 | 0.65 |
+
+These times do not establish a speed change. The benchmark excludes DOM work, and the engine stays identical.
+The measured gain is removal of fault D1 and 1 fewer action for either Index comparison.
+The syntax checks and `git diff --check` pass. This project defines no lint or format command.
+The Chrome session stopped after the checks. No server or watcher started.

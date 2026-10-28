@@ -298,8 +298,12 @@ fieldset.modes small { color: var(--muted); }
     <section class="panel" data-panel="commit" hidden>
       <p>Record the staged changes as a new commit (<code>git commit -m</code>).</p>
       <div id="mergeNotice"></div>
-      <h3>Staged changes</h3>
+      <h3>Index · Staged changes</h3>
       <ul class="plain" id="stagedList"></ul>
+      <div class="row">
+        <button id="compareIndexHead">Compare with HEAD</button>
+        <button id="compareIndexFiles">Compare with files</button>
+      </div>
       <div class="grid2">
         <label class="field"><span>Author name</span><input type="text" id="authorName" autocomplete="name"></label>
         <label class="field"><span>Author email</span><input type="email" id="authorEmail" autocomplete="email"></label>
@@ -3011,6 +3015,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = GitCore;
   };
   $('abortBtn').onclick = () => run('git merge --abort', async () => { await state.repo.abortMerge(); log('Merge aborted.', 'ok'); });
   const renderView = () => renderHistoryTab().catch((e) => log(e.message, 'err'));
+  for (const [id, mode] of [['compareIndexHead', 'staged'], ['compareIndexFiles', 'unstaged']]) {
+    $(id).onclick = () => { $('diffMode').value = mode; selectTab('diff'); };
+  }
   $('diffMode').onchange = renderView;
   for (const id of ['diffA', 'diffB']) $(id).onkeydown = (e) => { if (e.key === 'Enter') renderView(); };
   $('stashBtn').onclick = () => {

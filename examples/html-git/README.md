@@ -11,7 +11,7 @@ The page works offline from `file://` with no libraries or CDN requests.
 | --- | --- |
 | init | Create a repository with an initial branch name. |
 | Files | Stage or Unstage selected files. Stage includes deletions. Unstage keeps file content. The header checkbox selects or clears all files. Long lists show 500 rows at a time. |
-| commit | Record staged changes with a message, author name and email. Complete a merge after you resolve conflicts. |
+| commit | Compare Index with HEAD or files. Record staged changes with a message, author name and email. Complete a merge after you resolve conflicts. |
 | diff | Compare the index, files, HEAD or 2 commits. |
 | stash | Save changes to tracked files. Show, apply, pop or drop a stash. |
 | log | Show commit messages and refs. Restore a commit or 1 file from it. |
