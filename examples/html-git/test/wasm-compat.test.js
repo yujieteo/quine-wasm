@@ -12,6 +12,96 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 Unstage matches Git and JavaScript for literal paths, unborn HEAD and conflicts', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-unstage-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    for (const state of ['committed', 'unborn', 'conflict']) {
+      const actual = path.join(root, state);
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'core.autocrlf', 'false');
+      const paths = ['edit', 'delete', 'executable', '[x]*.txt', 'nested/日本語'];
+      fs.mkdirSync(path.join(actual, 'nested'));
+      for (const p of [...paths, 'x1.txt']) fs.writeFileSync(path.join(actual, p), 'base\n');
+      fs.chmodSync(path.join(actual, 'executable'), 0o755);
+      git(actual, 'add', '.');
+      if (state !== 'unborn') git(actual, 'commit', '-m', 'Base');
+      if (state === 'conflict') {
+        git(actual, 'checkout', '-b', 'topic');
+        for (const p of paths) fs.writeFileSync(path.join(actual, p), 'topic\n');
+        git(actual, 'commit', '-am', 'Topic');
+        git(actual, 'checkout', 'main');
+        for (const p of paths) fs.writeFileSync(path.join(actual, p), 'main\n');
+        git(actual, 'commit', '-am', 'Main');
+        assert.throws(() => git(actual, 'merge', 'topic'));
+      } else {
+        for (const p of paths) fs.writeFileSync(path.join(actual, p), 'staged\n');
+        fs.unlinkSync(path.join(actual, 'delete'));
+        fs.writeFileSync(path.join(actual, 'new'), 'new\n');
+        git(actual, 'add', '-A');
+        paths.push('new');
+      }
+      fs.writeFileSync(path.join(actual, 'x1.txt'), 'unselected\n');
+      git(actual, 'add', 'x1.txt');
+      fs.writeFileSync(path.join(actual, 'edit'), 'keep local bytes\n');
+      const reference = path.join(root, state + '-git');
+      const javascript = path.join(root, state + '-js');
+      fs.cpSync(actual, reference, { recursive: true });
+      fs.cpSync(actual, javascript, { recursive: true });
+      const repo = new (loadCore().Repo)(new NodeFS(javascript));
+      const disk = new NodeFS(actual);
+      const writes = [];
+      const writeFile = disk.writeFile.bind(disk);
+      disk.writeFile = async (p, bytes) => { writes.push(p); await writeFile(p, bytes); };
+      for (const p of paths) {
+        // An unborn deletion is unknown to both HEAD and index.
+        if (state === 'unborn' && p === 'delete') continue;
+        const m = await loadWasm(artifact);
+        const bridge = await importFolder(m, disk);
+        const before = snapshot(m);
+        m.FS.writeFile('/stage-path', p);
+        assert.equal(m._html_git_unstage_probe(), 0, state + ': ' + p);
+        const after = snapshot(m);
+        delete before['/repo/.git/index'];
+        delete after['/repo/.git/index'];
+        assert.deepEqual(after, before, 'only index bytes can change');
+        await bridge.flush();
+        git(reference, '--literal-pathspecs', 'reset', '--', p);
+        await repo.resetPaths([p]);
+        const entries = git(actual, 'ls-files', '--stage');
+        assert.equal(entries, git(reference, 'ls-files', '--stage'), state + ': Git index for ' + p);
+        assert.equal(entries, git(javascript, 'ls-files', '--stage'), state + ': JavaScript index for ' + p);
+        assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      assert.ok(writes.length > 0);
+      assert.ok(writes.every((p) => p === '.git/index'));
+      assert.equal(git(actual, 'write-tree'), git(reference, 'write-tree'));
+      assert.equal(git(actual, 'write-tree'), git(javascript, 'write-tree'));
+      assert.equal(git(actual, 'symbolic-ref', 'HEAD'), git(reference, 'symbolic-ref', 'HEAD'));
+      assert.equal(fs.readFileSync(path.join(actual, 'edit'), 'utf8'), 'keep local bytes\n');
+      if (state === 'conflict') assert.equal(git(actual, 'rev-parse', 'MERGE_HEAD'), git(reference, 'rev-parse', 'MERGE_HEAD'));
+      if (state !== 'unborn') assert.match(git(actual, 'ls-files', '--stage', '--', 'executable'), /^100755 /);
+      git(actual, 'fsck', '--full', '--strict');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, disk);
+      const before = snapshot(m);
+      m.FS.writeFile('/stage-path', 'absent');
+      assert.ok(m._html_git_unstage_probe() < 0);
+      assert.deepEqual(snapshot(m), before);
+      assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Init survives shutdown and produces a repository Git can use', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
@@ -399,7 +489,11 @@ test('libgit2 Stage refuses external clean filters before it changes repository 
         git(root, 'config', 'filter.uppercase.clean', 'tr a-z A-Z');
         fs.unlinkSync(path.join(root, 'file'));
         fs.unlinkSync(path.join(reference, 'file'));
-      } else git(reference, 'config', '--unset', 'filter.uppercase.clean');
+      } else {
+        git(reference, 'config', '--unset', 'filter.uppercase.clean');
+        // A new size prevents Git from reusing the former filtered blob.
+        for (const dir of [root, reference]) fs.writeFileSync(path.join(dir, 'file'), 'optional driver absent\n');
+      }
       const m = await loadWasm(artifact);
       const bridge = await importFolder(m, new NodeFS(root));
       m.FS.writeFile('/stage-path', 'file');

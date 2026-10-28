@@ -538,3 +538,54 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Stage speed.
 The measured gain is a safe refusal for an unsupported conversion that Stage previously accepted.
+
+## Unstage probe on 2026-10-28
+
+The Wasm probe now supports Unstage for 1 literal file path per call.
+Previously the probe had no Unstage operation.
+The new compatibility test passes 16 path checks against Git and JavaScript across 3 repository states.
+The states cover a normal commit, unborn HEAD and an unresolved merge.
+
+- Restore the selected index entry from HEAD, or remove it if HEAD lacks the path.
+  Reason: The Files interface needs Unstage, and the compatibility fixture verifies its result against Git and JavaScript.
+- Preserve file bytes, refs, merge state and all other index entries.
+  Reason: A change outside the selected index entry causes an incorrect Unstage result.
+- Treat each selected path as a literal path.
+  Reason: The wildcard fixture must preserve the separate `x1.txt` entry.
+
+The probe uses libgit2 tree and index APIs without a pathspec.
+Thus it needs no wildcard escape code or separate reset engine.
+It restores executable modes from HEAD and removes all conflict stages for the selected path.
+The test also covers Unicode paths, staged additions, staged deletions and partial file edits.
+Each export writes only `.git/index`. A second export writes no files.
+Unknown paths fail before any repository byte changes.
+Git accepts each final tree and passes strict fsck.
+
+The existing filter fixture exposed a stale Git index cache after its filter configuration changed.
+The fixture now changes the file size so Git must read the file without the former filter.
+Reason: The failed run retained the former uppercase blob and produced a false tree mismatch.
+
+The baseline passed all 27 tests. The build and all 28 tests passed after this change.
+The JavaScript compatibility suite, syntax check and `git diff --check` passed.
+No browser or server started. The page still uses JavaScript and retains its 4 recorded interface faults.
+Real browser folder handles still need verification before an engine replacement.
+
+The benchmark used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 144.90 |
+| JavaScript Refresh | 129.17 |
+| JavaScript Status | 124.72 |
+| JavaScript Log | 1.00 |
+| JavaScript Tree | 1.82 |
+| JavaScript HEAD and index reads | 4.55 |
+| Wasm instance creation | 10.99 |
+| Folder import | 787.57 |
+| First libgit2 HEAD and index reads | 37.49 |
+| Unchanged bridge export | 147.83 |
+
+These read costs do not measure Unstage speed.
+The measured gain is a new Wasm operation with 16 compatible path results.

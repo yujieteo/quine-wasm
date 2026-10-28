@@ -92,6 +92,62 @@ done:
     return rc;
 }
 
+/* Unstage one literal path from /stage-path without a worktree write. */
+EMSCRIPTEN_KEEPALIVE int html_git_unstage_probe(void)
+{
+    git_repository *repo = NULL;
+    git_index *index = NULL;
+    git_object *tree = NULL;
+    git_tree_entry *entry = NULL;
+    git_index_entry restored = {0};
+    char *path = NULL;
+    size_t capacity = 0;
+    FILE *input = fopen("/stage-path", "r");
+    int rc, known = 0;
+
+    if (!input) return -1;
+    rc = getdelim(&path, &capacity, '\0', input) > 0 ? 0 : -1;
+    fclose(input);
+    if (rc < 0) { free(path); return rc; }
+    if ((rc = git_libgit2_init()) < 0) { free(path); return rc; }
+    if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    if ((rc = git_repository_index(&index, repo)) < 0) goto done;
+    if ((rc = git_repository_head_unborn(repo)) < 0) goto done;
+    if (!rc) {
+        if ((rc = git_revparse_single(&tree, repo, "HEAD^{tree}")) < 0) goto done;
+        rc = git_tree_entry_bypath(&entry, (git_tree *)tree, path);
+        if (rc < 0 && rc != GIT_ENOTFOUND) goto done;
+        if (entry && git_tree_entry_type(entry) == GIT_OBJECT_TREE) {
+            rc = GIT_EINVALIDSPEC;
+            goto done;
+        }
+    }
+    for (int stage = 0; stage <= 3; stage++) {
+        if (git_index_get_bypath(index, path, stage)) { known = 1; break; }
+    }
+    if (!entry && !known) { rc = GIT_ENOTFOUND; goto done; }
+    for (int stage = 0; stage <= 3; stage++) {
+        rc = git_index_remove(index, path, stage);
+        if (rc < 0 && rc != GIT_ENOTFOUND) goto done;
+    }
+    if (entry) {
+        restored.path = path;
+        restored.mode = git_tree_entry_filemode(entry);
+        git_oid_cpy(&restored.id, git_tree_entry_id(entry));
+        if ((rc = git_index_add(index, &restored)) < 0) goto done;
+    }
+    rc = git_index_write(index);
+
+done:
+    git_tree_entry_free(entry);
+    git_object_free(tree);
+    git_index_free(index);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    free(path);
+    return rc;
+}
+
 /* Init test. The host supplies an empty /repo directory. */
 EMSCRIPTEN_KEEPALIVE int html_git_init_probe(void)
 {
