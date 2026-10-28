@@ -172,6 +172,7 @@ static int append_merge_parent(const git_oid *oid, void *payload)
 EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
 {
     git_repository *repo = NULL;
+    git_config *config = NULL;
     git_index *index = NULL;
     git_signature *signature = NULL;
     git_tree *tree = NULL;
@@ -182,7 +183,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     char *message = NULL, *identity = NULL;
     size_t capacity = 0;
     FILE *input;
-    int rc, unborn, state;
+    int rc, unborn, state, sign;
 
     input = fopen("/commit-message", "r");
     if (!input) return -1;
@@ -198,6 +199,13 @@ EMSCRIPTEN_KEEPALIVE int html_git_commit_probe(void)
     if ((rc = git_libgit2_init()) < 0) { free(message); free(identity); return rc; }
     if ((rc = git_signature_from_buffer(&signature, identity)) < 0) goto done;
     if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    /* This probe cannot sign. Refuse before tree or commit object writes. */
+    if ((rc = git_repository_config_snapshot(&config, repo)) < 0) goto done;
+    rc = git_config_get_bool(&sign, config, "commit.gpgsign");
+    if (rc != GIT_ENOTFOUND) {
+        if (rc < 0) goto done;
+        if (sign) { rc = GIT_EINVALIDSPEC; goto done; }
+    }
     state = git_repository_state(repo);
     if (state != GIT_REPOSITORY_STATE_NONE && state != GIT_REPOSITORY_STATE_MERGE) {
         rc = GIT_EINVALIDSPEC;
@@ -237,6 +245,7 @@ done:
     git_tree_free(tree);
     git_signature_free(signature);
     git_index_free(index);
+    git_config_free(config);
     git_repository_free(repo);
     git_libgit2_shutdown();
     free(message);

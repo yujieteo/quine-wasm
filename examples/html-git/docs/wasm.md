@@ -816,3 +816,51 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Commit speed.
 The measured gain is 3 compatible merge commits that the previous probe refused.
+
+## Commit signature refusal on 2026-10-28
+
+The Commit probe now refuses a required signature before any repository write.
+The new test failed against the previous build because it created an unsigned commit with `commit.gpgsign=true`.
+Git refused the same fixture because its configured signature program did not exist.
+JavaScript also created an unsigned commit and cannot supply a correct fallback.
+
+- Read `commit.gpgsign` before any tree or commit object write.
+  Reason: The baseline fixture silently omitted the required signature and changed repository bytes.
+- Refuse required signatures and invalid Boolean values without any repository byte change.
+  Reason: The probe has no signature support and must preserve the repository after a refusal.
+
+The probe uses libgit2's Boolean parser. It adds no signature program, package or interface control.
+It still permits unsigned commits when the config does not require a signature.
+
+| Config value | Result and evidence |
+| --- | --- |
+| `true`, `yes`, `1`, or a key without a value | Refuse with unchanged repository bytes and zero bridge writes. |
+| `invalid` | Refuse with unchanged repository bytes and zero bridge writes. Git also refuses this value. |
+| `false`, `no`, `0`, an empty value, or an absent key | Commit ID and object bytes match Git. Index bytes and unstaged file bytes stay unchanged. |
+
+All 10 cases match Git status and pass strict fsck.
+The 5 accepted cases also pass a second export with zero writes.
+The baseline passed all 33 tests. The fresh emcc and quine-wasm build passes all 34 tests.
+JavaScript syntax checks and `git diff --check` passed.
+No browser or server started. The page still uses JavaScript and retains its 3 recorded interface faults.
+Real browser folder handles, hooks and message cleanup still need proof before a Commit replacement.
+
+The separate benchmark used the packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 64.54 |
+| JavaScript Refresh | 61.29 |
+| JavaScript Status | 55.59 |
+| JavaScript Log | 0.55 |
+| JavaScript Tree | 0.63 |
+| JavaScript HEAD and index reads | 1.98 |
+| Wasm instance creation | 6.37 |
+| Folder import | 295.23 |
+| First libgit2 HEAD and index reads | 17.13 |
+| Unchanged bridge export | 64.63 |
+
+These read costs do not measure Commit speed.
+The measured gain is 5 safe refusals that the previous probe lacked, with 5 compatible unsigned Commit cases.

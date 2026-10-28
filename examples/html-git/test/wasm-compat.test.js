@@ -826,6 +826,73 @@ test('libgit2 Commit refuses invalid inputs, empty commits and unsupported state
   }
 });
 
+test('libgit2 Commit refuses required signatures and invalid signature config before any write', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-signature-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com',
+    GIT_AUTHOR_DATE: '1700000000 +0000', GIT_COMMITTER_DATE: '1700000000 +0000' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const cases = [
+    { value: 'true', refuse: true }, { value: 'yes', refuse: true },
+    { value: '1', refuse: true }, { implicit: true, refuse: true },
+    { value: 'invalid', refuse: true }, { value: 'false' },
+    { value: 'no' }, { value: '0' }, { value: '' }, {},
+  ];
+  try {
+    for (const [i, c] of cases.entries()) {
+      const actual = path.join(root, String(i));
+      fs.mkdirSync(actual);
+      git(actual, 'init', '-b', 'main');
+      git(actual, 'config', 'gpg.program', path.join(root, 'absent-gpg'));
+      if (c.implicit) fs.appendFileSync(path.join(actual, '.git/config'), '\n[commit]\n\tgpgsign\n');
+      else if (c.value !== undefined) git(actual, 'config', 'commit.gpgsign', c.value);
+      fs.writeFileSync(path.join(actual, 'file'), 'staged bytes\n');
+      git(actual, 'add', 'file');
+      fs.writeFileSync(path.join(actual, 'file'), 'unstaged bytes\n');
+      const reference = actual + '-git';
+      fs.cpSync(actual, reference, { recursive: true });
+      if (c.refuse) assert.throws(() => git(reference, 'commit', '-m', 'Commit'), /Command failed/);
+      else git(reference, 'commit', '-m', 'Commit');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(actual));
+      const before = snapshot(m);
+      m.FS.writeFile('/commit-message', 'Commit\n');
+      m.FS.writeFile('/commit-signature', 'Test <test@example.com> 1700000000 +0000');
+      const rc = m._html_git_commit_probe();
+      if (c.refuse) {
+        assert.ok(rc < 0, `${i}: required or invalid signature config must fail`);
+        assert.deepEqual(snapshot(m), before, `${i}: no repository byte change`);
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+        if (c.value === 'true') {
+          const javascript = actual + '-js';
+          fs.cpSync(actual, javascript, { recursive: true });
+          const result = await new (loadCore().Repo)(new NodeFS(javascript)).commit({
+            message: 'Commit\n', ident: { name: 'Test', email: 'test@example.com' },
+            date: new Date('2023-11-14T22:13:20Z') });
+          assert.ok(result.sha, 'JavaScript ignores the required signature');
+          assert.doesNotMatch(git(javascript, 'cat-file', 'commit', 'HEAD'), /^gpgsig /m);
+        }
+      } else {
+        assert.equal(rc, 0, `${i}: unsigned commit remains available`);
+        await bridge.flush();
+        assert.equal(git(actual, 'rev-parse', 'HEAD'), git(reference, 'rev-parse', 'HEAD'));
+        assert.equal(git(actual, 'cat-file', 'commit', 'HEAD'), git(reference, 'cat-file', 'commit', 'HEAD'));
+        assert.deepEqual(fs.readFileSync(path.join(actual, '.git/index')),
+          Buffer.from(before['/repo/.git/index'], 'base64'));
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      assert.equal(git(actual, 'status', '--porcelain'), git(reference, 'status', '--porcelain'));
+      assert.equal(fs.readFileSync(path.join(actual, 'file'), 'utf8'), 'unstaged bytes\n');
+      git(actual, 'fsck', '--full', '--strict');
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Commit completes resolved merges with Git and JavaScript results', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
