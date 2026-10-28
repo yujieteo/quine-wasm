@@ -154,6 +154,39 @@ struct commit_parents {
     size_t count;
 };
 
+/* Compare HEAD with the index. Keep the patch outside the repository. */
+EMSCRIPTEN_KEEPALIVE int html_git_index_compare_probe(void)
+{
+    git_repository *repo = NULL;
+    git_object *tree = NULL;
+    git_diff *diff = NULL;
+    git_buf patch = GIT_BUF_INIT;
+    FILE *out = NULL;
+    int rc;
+
+    remove("/compare-result");
+    if ((rc = git_libgit2_init()) < 0) return rc;
+    if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    if ((rc = git_repository_head_unborn(repo)) < 0) goto done;
+    if (!rc && (rc = git_revparse_single(&tree, repo, "HEAD^{tree}")) < 0) goto done;
+    if ((rc = git_diff_tree_to_index(&diff, repo, (git_tree *)tree, NULL, NULL)) < 0) goto done;
+    if ((rc = git_diff_find_similar(diff, NULL)) < 0) goto done;
+    if ((rc = git_diff_to_buf(&patch, diff, GIT_DIFF_FORMAT_PATCH)) < 0) goto done;
+    out = fopen("/compare-result", "wb");
+    if (!out) { rc = -1; goto done; }
+    rc = fwrite(patch.ptr, 1, patch.size, out) == patch.size ? 0 : -1;
+    if (fclose(out)) rc = -1;
+
+done:
+    if (rc < 0) remove("/compare-result");
+    git_buf_dispose(&patch);
+    git_diff_free(diff);
+    git_object_free(tree);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    return rc;
+}
+
 static int append_merge_parent(const git_oid *oid, void *payload)
 {
     struct commit_parents *parents = payload;

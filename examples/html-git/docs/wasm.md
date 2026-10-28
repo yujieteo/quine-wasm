@@ -919,3 +919,60 @@ Each trial checked HEAD and tree IDs against JavaScript.
 
 These read costs do not measure Branch Create speed. The benchmark ran beside the test suite, so resource contention can affect these times.
 The measured gain is 6 compatible branch results and 9 safe refusals for a new Wasm operation.
+
+## Index Compare probe on 2026-10-28
+
+The Wasm probe now compares HEAD with the index and produces a patch that matches Git in 8 cases.
+The baseline lacked this export, so the new test failed before the change.
+The probe uses libgit2 diff APIs and writes its patch to `/compare-result`, outside the repository.
+It adds no package or patch formatter.
+
+- Compare the index with HEAD, with no repository writes.
+  Reason: The page exposes this action, but the previous Wasm probe could not produce its patch.
+- Remove a stale patch before each call, including a refused call.
+  Reason: An error must not present a previous result as the current comparison.
+
+| Case | Result and evidence |
+| --- | --- |
+| Empty index with unborn HEAD | Empty patch matches Git and JavaScript. |
+| Staged root files | Text and binary patches match Git and JavaScript. |
+| Staged additions, deletions and edits | Patch matches Git and JavaScript, including executable mode and absent final newline. |
+| Exact rename | Patch matches Git. JavaScript emits separate deletion and addition patches. |
+| Rename with `diff.renames=false` | Separate deletion and addition patches match Git and JavaScript. |
+| Packed objects and refs | Patch matches Git and JavaScript. |
+| Detached HEAD | Patch matches Git and JavaScript. |
+| Unchanged index | Empty patch matches Git and JavaScript despite unstaged edits. |
+
+Each case excludes unstaged and untracked bytes from the patch.
+Each case passes 2 calls with identical repository bytes and zero bridge writes.
+Each fixture passes strict fsck. An absent repository causes refusal and removes the stale patch.
+The reference command uses `git diff --cached --no-ext-diff --no-textconv --no-color`.
+These tests establish the default patch format, not every diff configuration or conflict format.
+
+The baseline passed all 35 tests. The fresh emcc and quine-wasm build passes all 36 tests.
+JavaScript syntax checks and `git diff --check` passed. No browser or server started.
+The page still uses JavaScript and retains its 3 recorded interface faults.
+Real browser folder handles still need proof before an engine replacement.
+
+The operation benchmark used a copy of the packed fixture with 10,001 tracked files and 20 commits.
+It staged edits to 100 files. Both engines produced the same 16,450-byte patch as Git in all 5 trials.
+The median Compare time was 30.79 ms for JavaScript and 11.37 ms for Wasm.
+These times include patch reads but exclude instance creation, folder import and export.
+Thus they do not establish an improvement in total operation time.
+
+The separate read benchmark used the original packed fixture with no concurrent test process.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 61.90 |
+| JavaScript Refresh | 57.96 |
+| JavaScript Status | 55.39 |
+| JavaScript Log | 0.42 |
+| JavaScript Tree | 0.55 |
+| JavaScript HEAD and index reads | 1.96 |
+| Wasm instance creation | 6.00 |
+| Folder import | 279.45 |
+| First libgit2 HEAD and index reads | 4.46 |
+| Unchanged bridge export | 61.33 |

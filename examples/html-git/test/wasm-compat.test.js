@@ -12,6 +12,72 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 Index Compare matches Git without repository writes', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-index-compare-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    for (const kind of ['unborn-empty', 'root', 'mixed', 'rename', 'rename-disabled', 'packed', 'detached', 'unchanged']) {
+      const dir = path.join(root, kind);
+      fs.mkdirSync(dir);
+      git(dir, 'init', '-b', 'main');
+      git(dir, 'config', 'core.autocrlf', 'false');
+      if (kind !== 'unborn-empty') {
+        fs.writeFileSync(path.join(dir, 'file'), 'first\nsecond\nthird\n');
+        fs.writeFileSync(path.join(dir, 'removed'), 'remove me\n');
+        fs.writeFileSync(path.join(dir, 'binary'), Buffer.from([0, 1, 2]));
+        git(dir, 'add', '.');
+        if (kind !== 'root') git(dir, 'commit', '-m', 'Base');
+      }
+      if (kind === 'rename' || kind === 'rename-disabled') {
+        git(dir, 'mv', 'file', 'renamed');
+        if (kind === 'rename-disabled') git(dir, 'config', 'diff.renames', 'false');
+      }
+      if (['mixed', 'packed', 'detached'].includes(kind)) {
+        if (kind === 'packed') { git(dir, 'gc'); git(dir, 'pack-refs', '--all'); }
+        if (kind === 'detached') git(dir, 'checkout', '--detach');
+        fs.writeFileSync(path.join(dir, 'file'), 'first\nchanged\nthird');
+        fs.unlinkSync(path.join(dir, 'removed'));
+        fs.writeFileSync(path.join(dir, 'binary'), Buffer.from([0, 3, 4, 5]));
+        fs.writeFileSync(path.join(dir, 'added'), 'new file\n');
+        git(dir, 'add', '-A');
+        git(dir, 'update-index', '--chmod=+x', 'added');
+      }
+      // Index Compare must exclude both unstaged and untracked bytes.
+      fs.writeFileSync(path.join(dir, 'file'), 'unstaged content\n');
+      fs.writeFileSync(path.join(dir, 'untracked'), 'untracked content\n');
+      const expected = git(dir, 'diff', '--cached', '--no-ext-diff', '--no-textconv', '--no-color');
+      const m = await loadWasm(artifact);
+      const bridge = await importFolder(m, new NodeFS(dir));
+      const before = snapshot(m);
+      assert.equal(typeof m._html_git_index_compare_probe, 'function', 'Index Compare export');
+      for (let call = 0; call < 2; call++) {
+        assert.equal(m._html_git_index_compare_probe(), 0, kind);
+        assert.equal(m.FS.readFile('/compare-result', { encoding: 'utf8' }), expected, kind + ': Git patch');
+        assert.deepEqual(snapshot(m), before, kind + ': repository bytes');
+        assert.deepEqual(await bridge.flush(), { filesWritten: 0, pathsRemoved: 0 });
+      }
+      const repo = new (loadCore().Repo)(new NodeFS(dir));
+      const jsPatch = (await repo.diff({ from: 'HEAD', to: 'index' })).text;
+      if (kind === 'rename') {
+        assert.match(expected, /similarity index 100%\nrename from file\nrename to renamed\n/);
+        assert.notEqual(jsPatch, expected, 'JavaScript emits separate deletion and addition patches');
+      } else assert.equal(jsPatch, expected, kind + ': JavaScript patch');
+      git(dir, 'fsck', '--full', '--strict');
+    }
+    const m = await loadWasm(artifact);
+    m.FS.writeFile('/compare-result', 'stale patch');
+    assert.ok(m._html_git_index_compare_probe() < 0, 'absent repository');
+    assert.equal(m.FS.analyzePath('/compare-result').exists, false, 'no stale result after refusal');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 Stage matches Git safecrlf refusals and accepted file bytes', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
