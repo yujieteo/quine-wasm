@@ -7,7 +7,7 @@
 #include <errno.h>
 
 /* Libgit2 omits encoding conversion and external filter commands. */
-static int check_stage_attributes(git_repository *repo, const char *path)
+static int check_stage_attributes(git_repository *repo, const char *path, int check_exists)
 {
     const char *names[] = { "working-tree-encoding", "filter" };
     const char *values[2];
@@ -19,12 +19,14 @@ static int check_stage_attributes(git_repository *repo, const char *path)
     struct stat st;
     int rc, required;
 
-    fullpath = malloc(strlen(path) + sizeof("/repo/"));
-    if (!fullpath) return -1;
-    sprintf(fullpath, "/repo/%s", path);
-    rc = stat(fullpath, &st);
-    free(fullpath);
-    if (rc < 0) return errno == ENOENT ? 0 : -1;
+    if (check_exists) {
+        fullpath = malloc(strlen(path) + sizeof("/repo/"));
+        if (!fullpath) return -1;
+        sprintf(fullpath, "/repo/%s", path);
+        rc = stat(fullpath, &st);
+        free(fullpath);
+        if (rc < 0) return errno == ENOENT ? 0 : -1;
+    }
     if ((rc = git_attr_get_many(values, repo, 0, path, 2, names)) < 0) return rc;
     if (GIT_ATTR_HAS_VALUE(values[0])) return GIT_EINVALIDSPEC;
     filter = values[1];
@@ -81,7 +83,7 @@ EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
         if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;
         if (ignored) { rc = GIT_EINVALIDSPEC; goto done; }
     }
-    if ((rc = check_stage_attributes(repo, path)) < 0) goto done;
+    if ((rc = check_stage_attributes(repo, path, 1)) < 0) goto done;
     rc = git_index_add_bypath(index, path);
     if (rc == GIT_ENOTFOUND && tracked) rc = git_index_remove_bypath(index, path);
     if (rc == 0) rc = git_index_write(index);
@@ -156,6 +158,15 @@ struct commit_parents {
     size_t count;
 };
 
+/* The diff iterator already checks which tracked paths exist. */
+static int check_compare_attributes(const git_diff *diff, const char *old_path,
+    const char *new_path, void *payload)
+{
+    (void)diff;
+    if (!old_path || !new_path || strcmp(old_path, new_path)) return 0;
+    return check_stage_attributes((git_repository *)payload, new_path, 0);
+}
+
 /* Keep both comparison patches outside the repository. */
 static int compare_probe(int files)
 {
@@ -175,10 +186,8 @@ static int compare_probe(int files)
         if ((rc = git_repository_index(&index, repo)) < 0) goto done;
         /* Folder handles omit modes. Compare content with the retained index mode. */
         options.flags |= GIT_DIFF_IGNORE_FILEMODE;
-        for (size_t i = 0; i < git_index_entrycount(index); i++) {
-            const git_index_entry *entry = git_index_get_byindex(index, i);
-            if ((rc = check_stage_attributes(repo, entry->path)) < 0) goto done;
-        }
+        options.progress_cb = check_compare_attributes;
+        options.payload = repo;
         rc = git_diff_index_to_workdir(&diff, repo, index, &options);
     } else {
         if ((rc = git_repository_head_unborn(repo)) < 0) goto done;

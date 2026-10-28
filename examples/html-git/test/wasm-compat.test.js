@@ -21,7 +21,8 @@ test('libgit2 File Compare matches Git without repository writes', {
     GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   try {
-    for (const kind of ['unborn-empty', 'root', 'mixed', 'packed', 'detached', 'unchanged', 'crlf', 'ident', 'filter', 'encoding']) {
+    for (const kind of ['unborn-empty', 'root', 'mixed', 'packed', 'detached', 'unchanged', 'crlf', 'ident', 'filter', 'encoding',
+      'filter-unchanged', 'filter-deleted', 'encoding-deleted', 'filter-untracked', 'nested-override']) {
       const dir = path.join(root, kind);
       fs.mkdirSync(dir);
       git(dir, 'init', '-b', 'main');
@@ -40,7 +41,7 @@ test('libgit2 File Compare matches Git without repository writes', {
           fs.writeFileSync(path.join(dir, 'file'), 'staged content\n');
           git(dir, 'add', 'file');
         }
-        if (kind !== 'unchanged') {
+        if (kind !== 'unchanged' && kind !== 'filter-unchanged') {
           fs.writeFileSync(path.join(dir, 'file'), 'first\nchanged\nthird');
           fs.unlinkSync(path.join(dir, 'removed'));
           fs.writeFileSync(path.join(dir, 'binary'), Buffer.from([0, 3, 4, 5]));
@@ -53,18 +54,29 @@ test('libgit2 File Compare matches Git without repository writes', {
           fs.writeFileSync(path.join(dir, '.gitattributes'), 'file ident\n');
           fs.writeFileSync(path.join(dir, 'file'), '$Id: expanded value $\n');
         }
-        if (kind === 'filter') {
+        if (kind.startsWith('filter')) {
           fs.writeFileSync(path.join(dir, '.gitattributes'), 'file filter=test\n');
           git(dir, 'config', 'filter.test.clean', 'false');
         }
-        if (kind === 'encoding') fs.writeFileSync(path.join(dir, '.gitattributes'), 'file working-tree-encoding=UTF-16LE\n');
+        if (kind.startsWith('encoding')) fs.writeFileSync(path.join(dir, '.gitattributes'), 'file working-tree-encoding=UTF-16LE\n');
+        if (kind.endsWith('-deleted')) fs.unlinkSync(path.join(dir, 'file'));
+        if (kind === 'filter-untracked') fs.writeFileSync(path.join(dir, '.gitattributes'), 'untracked filter=test\n');
+        if (kind === 'nested-override') {
+          fs.mkdirSync(path.join(dir, 'nested'));
+          fs.writeFileSync(path.join(dir, 'nested/file'), 'base\n');
+          git(dir, 'add', 'nested/file');
+          fs.writeFileSync(path.join(dir, 'nested/file'), 'changed\n');
+          fs.writeFileSync(path.join(dir, '.gitattributes'), 'nested/** filter=test\n');
+          fs.writeFileSync(path.join(dir, 'nested/.gitattributes'), 'file -filter\n');
+          git(dir, 'config', 'filter.test.clean', 'false');
+        }
       }
       fs.writeFileSync(path.join(dir, 'untracked'), 'untracked content\n');
       const m = await loadWasm(artifact);
       const bridge = await importFolder(m, new NodeFS(dir));
       const before = snapshot(m);
       assert.equal(typeof m._html_git_file_compare_probe, 'function', 'File Compare export');
-      const refuse = kind === 'filter' || kind === 'encoding';
+      const refuse = kind === 'filter' || kind === 'encoding' || kind === 'filter-unchanged';
       const expected = refuse ? null : git(dir, 'diff', '--no-ext-diff', '--no-textconv', '--no-color');
       for (let call = 0; call < 2; call++) {
         m.FS.writeFile('/compare-result', 'stale patch');

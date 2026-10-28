@@ -1086,3 +1086,54 @@ Each trial checked HEAD and tree IDs against JavaScript.
 | Folder import | 278.25 |
 | First libgit2 HEAD and Index reads | 16.25 |
 | Unchanged bridge export | 59.18 |
+
+## File Compare path checks on 2026-10-28
+
+File Compare now uses the libgit2 diff iterator to check attributes for existing tracked paths.
+This change removes the separate Index traversal and its duplicate path allocation and `stat` call.
+Stage retains its existence check because Stage must accept deletions.
+
+- Use the diff iterator's path results for File Compare.
+  Reason: The baseline run took 620.93 ms and repeated the existence check for every tracked path.
+- Check attributes before libgit2 compares file bytes, including unchanged files.
+  Reason: An unsupported clean filter can change the correct patch even when file bytes match the Index.
+- Preserve attribute precedence and accept deletions without conversion.
+  Reason: The compatibility fixtures check nested overrides and deleted paths with unsupported conversion attributes.
+
+The existing compatibility test now covers 12 accepted cases and 3 safe refusals.
+The additional cases cover an unchanged file with an unsupported filter, 2 deletions, an untracked filter, and a nested override.
+Every accepted case matched Git's patch. Every call preserved repository bytes and caused zero bridge writes.
+The fresh emcc and quine-wasm build passed all 37 tests with no skipped tests.
+The JavaScript syntax check and `git diff --check` passed.
+
+The operation benchmark used 10,001 tracked files, 20 commits and 100 unstaged edits.
+Both engines matched Git's 16,350-byte patch in every trial.
+Each value is the median of 5 trials, in milliseconds.
+The final measurements ran without a concurrent test process.
+
+| Engine | Before, ms | After, ms |
+| --- | ---: | ---: |
+| JavaScript File Compare | 120.76 | 119.53 |
+| Wasm File Compare | 620.93 | 600.57 |
+
+The measured Wasm time fell by 3.3%. This small difference does not establish a broad speed gain.
+The times exclude instance creation, folder import and export. Wasm File Compare remains slower than JavaScript.
+
+The separate `test/benchmark.js` run used the unchanged packed fixture.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Time, ms |
+| --- | ---: |
+| JavaScript Open | 63.52 |
+| JavaScript Refresh | 56.69 |
+| JavaScript Status | 52.53 |
+| JavaScript Log | 0.43 |
+| JavaScript Tree | 0.52 |
+| JavaScript HEAD and Index reads | 2.16 |
+| Wasm instance creation | 5.44 |
+| Folder import | 273.48 |
+| First libgit2 HEAD and Index reads | 16.24 |
+| Unchanged bridge export | 60.59 |
+
+The page still uses JavaScript. This run created no commit and started no browser or server.
