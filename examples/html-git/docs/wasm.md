@@ -22,7 +22,10 @@ Quine-wasm requires its own 2 existing terminal packages to assemble the HTML fi
 The test host copies a fixture into MEMFS at `/repo` and reads the result from `/probe-result`.
 The quine store uses `/quine-data` and excludes all file paths.
 Thus the initial store contains only its system entry.
-The probe reads repository bytes. It writes only `/probe-result`.
+The read probe reads repository bytes. It writes only `/probe-result`.
+The Init probe creates a repository at `/repo` in MEMFS.
+Its test exports that fixture to disk for command-line Git checks.
+The page does not yet call this operation or write through browser folder handles.
 
 Manual steps first tested the compiler, then the build, then Chrome.
 The automated test now repeats the repository checks.
@@ -126,3 +129,52 @@ The copy cost exceeds the probe cost. A future bridge should measure its copy an
 
 The next engine unit is a folder bridge with changed-file writes and one compatible write operation.
 The concept model and its 4 interface faults stay unchanged in this iteration.
+
+## Init stack fault on 2026-10-28
+
+The Init probe now completes shutdown and produces a repository that command-line Git accepts.
+The previous attempt failed at shutdown with `table index is out of bounds`.
+The failure came from an earlier stack overflow, rather than a shutdown callback fault.
+
+The diagnostic build used `-g2 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2` with the default 64 KiB stack.
+It stopped in `git_filebuf_open`, through `config_file_write` and `repo_init_config`.
+It reported a stack pointer of `0x0000e070`, below the lower limit of `0x0000ed10`.
+The earlier build continued after this overflow and corrupted memory before shutdown.
+
+- Use a 128 KiB C stack for the libgit2 probe.
+  Reason: The Init run overflowed the default 64 KiB stack. The same run passed with 128 KiB.
+- Keep stack checks in the normal build.
+  Reason: The unchecked overflow caused a later trap that concealed its cause and could corrupt repository results.
+- Test Init, repeated shutdown, and the exported repository with command-line Git.
+  Reason: The previous read-only probe passed but did not exercise the config write that caused the overflow.
+
+The change adds 64 KiB of stack space. It does not change the separate quine-wasm Asyncify stack.
+The test calls Init and shutdown 5 times in one Wasm instance.
+The last 4 calls preserve every repository file byte.
+The fixture retains its original file and all empty repository directories after export.
+Git reads `refs/heads/main`, adds the file, creates a commit, and passes `git fsck --full --strict`.
+A fresh Wasm instance reads that commit and returns the same HEAD as Git.
+The JavaScript engine also reads the initial branch from the exported repository.
+All 21 tests pass with an explicit Wasm artifact path.
+
+The large repository benchmark used the same 10,000 Files and 20 Commits as the earlier run.
+The median of 5 trials gave these times, in milliseconds.
+
+| Step | Median, ms |
+| --- | ---: |
+| JavaScript Open | 280.82 |
+| JavaScript Refresh | 279.67 |
+| JavaScript Status | 278.51 |
+| JavaScript Log | 2.05 |
+| JavaScript Tree | 3.13 |
+| JavaScript HEAD, commit and index reads after refresh | 8.92 |
+| Wasm engine load and instance creation | 24.12 |
+| Complete folder copy from disk to MEMFS | 982.33 |
+| First libgit2 HEAD, commit and index reads | 46.58 |
+
+The run checked HEAD and tree IDs on each trial.
+These times exceed the earlier run, including the unchanged JavaScript operations.
+They do not establish a speed change from the stack change.
+
+The application retains its JavaScript Init operation until the browser folder bridge passes compatibility checks.
+This run changes no interface controls. The concept model retains its 4 interface faults.

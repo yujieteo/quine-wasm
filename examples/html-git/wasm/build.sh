@@ -23,5 +23,6 @@ cmake --build "$build_dir" --parallel 4
 node "$QUINE_WASM_DIR/bin/quine-wasm.js" \
   -o data/wasm-build/probe.html --title 'html-git libgit2 probe' \
   --prefix /quine-data --exclude '**' -- \
-  -Oz -I"$source_dir/include" wasm/probe.c "$build_dir/libgit2.a"
+  -Oz -sSTACK_SIZE=131072 -sSTACK_OVERFLOW_CHECK=2 \
+  -I"$source_dir/include" wasm/probe.c "$build_dir/libgit2.a"
 node wasm/notices.js "$source_dir" data/wasm-build/probe.html

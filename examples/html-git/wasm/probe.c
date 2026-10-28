@@ -2,6 +2,22 @@
 #include <git2.h>
 #include <stdio.h>
 
+/* Init test. The host supplies an empty /repo directory. */
+EMSCRIPTEN_KEEPALIVE int html_git_init_probe(void)
+{
+    git_repository *repo = NULL;
+    git_repository_init_options options = GIT_REPOSITORY_INIT_OPTIONS_INIT;
+    int rc;
+
+    options.flags = GIT_REPOSITORY_INIT_MKPATH;
+    options.initial_head = "main";
+    if ((rc = git_libgit2_init()) < 0) return rc;
+    rc = git_repository_init_ext(&repo, "/repo", &options);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    return rc;
+}
+
 /* Read-only build probe. The host supplies /repo, outside the quine store. */
 EMSCRIPTEN_KEEPALIVE int html_git_probe(void)
 {

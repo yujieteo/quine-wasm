@@ -11,6 +11,53 @@ const artifact = process.env.HTML_GIT_WASM || path.join(__dirname, '../data/wasm
 const available = fs.existsSync(artifact);
 if (process.env.HTML_GIT_WASM && !available) throw new Error('HTML_GIT_WASM file absent');
 
+test('libgit2 Init survives shutdown and produces a repository Git can use', {
+  skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
+}, async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'html-git-wasm-init-'));
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
+    GIT_COMMITTER_NAME: 'Test', GIT_COMMITTER_EMAIL: 'test@example.com' };
+  const git = (...args) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8' });
+  try {
+    fs.writeFileSync(path.join(root, 'file.txt'), 'Keep this file.\n');
+    const m = await loadWasm(artifact);
+    copyToMemfs(m, root);
+    assert.equal(m._html_git_init_probe(), 0);
+    const initialized = snapshot(m);
+    for (let n = 0; n < 4; n++) {
+      assert.equal(m._html_git_init_probe(), 0, 'Init and shutdown can repeat');
+      assert.deepEqual(snapshot(m), initialized, 'reinit preserves repository bytes');
+    }
+    // Export the fixture, with empty directories, for command-line Git checks.
+    function exportDir(rel = '') {
+      fs.mkdirSync(path.join(root, rel), { recursive: true });
+      for (const name of m.FS.readdir('/repo/' + rel).filter((n) => n !== '.' && n !== '..')) {
+        const child = rel ? rel + '/' + name : name;
+        if (m.FS.isDir(m.FS.stat('/repo/' + child).mode)) exportDir(child);
+        else fs.writeFileSync(path.join(root, child), m.FS.readFile('/repo/' + child));
+      }
+    }
+    exportDir();
+    assert.equal(fs.readFileSync(path.join(root, 'file.txt'), 'utf8'), 'Keep this file.\n');
+    assert.equal(git('symbolic-ref', 'HEAD').trim(), 'refs/heads/main');
+    assert.equal(git('config', '--bool', 'core.bare').trim(), 'false');
+    const core = loadCore();
+    const repo = new core.Repo(new NodeFS(root));
+    assert.equal((await repo.status()).head.branch, 'main');
+    git('add', 'file.txt');
+    git('commit', '-m', 'First');
+    git('fsck', '--full', '--strict');
+    const fresh = await loadWasm(artifact);
+    copyToMemfs(fresh, root);
+    assert.equal(fresh._html_git_probe(), 0);
+    assert.equal(fresh.FS.readFile('/probe-result', { encoding: 'utf8' }).split('\n')[0],
+      git('rev-parse', 'HEAD').trim());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('libgit2 quine probe matches Git and JavaScript without repository writes', {
   skip: available ? false : 'Run wasm/build.sh to build the libgit2 probe.',
 }, async () => {
