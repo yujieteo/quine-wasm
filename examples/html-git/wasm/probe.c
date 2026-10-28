@@ -1,6 +1,41 @@
 #include <emscripten/emscripten.h>
 #include <git2.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+/* Stage one literal path. The host supplies UTF-8 bytes in /stage-path. */
+EMSCRIPTEN_KEEPALIVE int html_git_stage_probe(void)
+{
+    git_repository *repo = NULL;
+    git_index *index = NULL;
+    char *path = NULL;
+    size_t capacity = 0;
+    FILE *input = fopen("/stage-path", "r");
+    int rc, tracked, ignored;
+
+    if (!input) return -1;
+    rc = getdelim(&path, &capacity, '\0', input) > 0 ? 0 : -1;
+    fclose(input);
+    if (rc < 0) { free(path); return rc; }
+    if ((rc = git_libgit2_init()) < 0) { free(path); return rc; }
+    if ((rc = git_repository_open(&repo, "/repo")) < 0) goto done;
+    if ((rc = git_repository_index(&index, repo)) < 0) goto done;
+    tracked = git_index_get_bypath(index, path, 0) != NULL;
+    if (!tracked) {
+        if ((rc = git_ignore_path_is_ignored(&ignored, repo, path)) < 0) goto done;
+        if (ignored) { rc = GIT_EINVALIDSPEC; goto done; }
+    }
+    rc = git_index_add_bypath(index, path);
+    if (rc == GIT_ENOTFOUND && tracked) rc = git_index_remove_bypath(index, path);
+    if (rc == 0) rc = git_index_write(index);
+
+done:
+    git_index_free(index);
+    git_repository_free(repo);
+    git_libgit2_shutdown();
+    free(path);
+    return rc;
+}
 
 /* Init test. The host supplies an empty /repo directory. */
 EMSCRIPTEN_KEEPALIVE int html_git_init_probe(void)

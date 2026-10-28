@@ -288,3 +288,72 @@ The emcc and quine-wasm build passed, and all 23 tests passed with an explicit W
 Syntax checks and `git diff --check` passed.
 No browser or server started in this iteration.
 Real browser folder handles still require verification before the page replaces JavaScript Init.
+
+## Selected-path Stage probe on 2026-10-28
+
+The probe now stages 1 selected file through libgit2 and exports its index and objects through the folder bridge.
+Before this change, the Wasm probe supported Init and repository reads, but no Stage operation.
+The new compatibility test passes 6 selected-path cases against Git and JavaScript.
+The page still uses JavaScript. This change adds no interface control or package.
+
+- Stage a literal file path, without wildcard expansion.
+  Reason: The `[ab].txt` fixture must leave the separate `a.txt` file untracked.
+- Preserve unrelated files and reject an untracked ignored file or an absent file.
+  Reason: A Stage operation must not silently alter another path or report success for a refused path.
+- Export the index and new objects through the folder bridge.
+  Reason: Command-line Git must read each staged result from the same repository on disk.
+
+The host writes UTF-8 path bytes to `/stage-path`, outside `/repo` and the quine store.
+It calls `_html_git_stage_probe()` and exports only after a zero return value.
+The probe uses `git_index_add_bypath` for new or modified files.
+It removes a tracked index entry if its file no longer exists.
+It checks ignore rules for untracked files before it creates an object.
+It writes the index only after the selected operation succeeds.
+The probe handles 1 file per call. Directory selection and multiple-path transactions remain outside this test.
+
+| Compatibility case | Result |
+| --- | --- |
+| Modified tracked file | Git, JavaScript and Wasm produce the same tree. |
+| Deleted tracked file | All 3 engines remove the same index entry. |
+| Tracked file with an ignore rule | All 3 engines stage its new content. |
+| Unicode path with a space | All 3 engines preserve the literal path. |
+| Literal wildcard path | All 3 engines stage `[ab].txt` and leave `a.txt` untracked. |
+| Binary file | All 3 engines produce the same blob and tree. |
+| Unselected tracked file | Its index content stays old. Its disk content stays new. |
+| Untracked ignored file or absent file | The probe refuses and the bridge exports zero files. |
+
+The test compares tree IDs and status with command-line Git after each export.
+It also runs `git fsck --full --strict` after each export.
+Only `.git/index` and `.git/objects/` receive bridge file writes.
+A second export without a change writes zero files.
+The test uses a fresh import for each selected file.
+Git verification commands can refresh `.git/index`, so reuse of the previous snapshot correctly triggers the external-edit check.
+
+The build passed, and all 24 tests passed with an explicit Wasm artifact path.
+The baseline passed all 23 tests.
+Syntax checks and `git diff --check` passed. This repository defines no lint or format command.
+No browser or server started in this iteration.
+The real browser folder check remains necessary before the page replaces a JavaScript operation.
+Executable modes, attributes and conflict resolution need separate Stage checks before that replacement.
+The interface retains its 4 recorded faults.
+
+### Read benchmark
+
+The before and after runs used the same packed fixture with 10,001 tracked files and 20 commits.
+Each value is the median of 5 trials, in milliseconds.
+Each trial checked HEAD and tree IDs against JavaScript.
+
+| Step | Before, ms | After, ms |
+| --- | ---: | ---: |
+| JavaScript Open | 99.08 | 94.51 |
+| JavaScript Refresh | 81.33 | 78.53 |
+| JavaScript Status | 82.36 | 82.17 |
+| JavaScript Log | 0.97 | 0.70 |
+| JavaScript Tree | 0.99 | 0.85 |
+| JavaScript HEAD, commit and index reads | 3.24 | 2.79 |
+| Wasm instance creation | 9.10 | 7.93 |
+| Folder import | 631.14 | 485.12 |
+| First libgit2 HEAD, commit and index reads | 23.30 | 20.84 |
+| Unchanged bridge export | 109.45 | 98.03 |
+
+These measurements cover reads and an unchanged export. They do not measure Stage speed or establish a speed gain.
