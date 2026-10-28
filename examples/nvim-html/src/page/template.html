@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nvim.html</title>
+<!--@xterm-css-->
+<style>
+  :root { --bar-bg: #1e2127; --bar-fg: #c8ccd4; --accent: #61afef; }
+  html, body { margin: 0; height: 100%; background: #111318; color: var(--bar-fg);
+    font: 13px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 4px 8px; background: var(--bar-bg); }
+  #bar button { font: inherit; color: inherit; background: #2c313a; border: 1px solid #3e4451;
+    border-radius: 4px; padding: 2px 10px; cursor: pointer; }
+  #bar button:hover { border-color: var(--accent); }
+  #bar button.pending { border-color: #e5c07b; color: #e5c07b; }
+  #status { margin-left: auto; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #term { flex: 1; min-height: 0; padding: 2px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="save" title="Download a copy of this page with your files inside it (:HtmlSave)">Save</button>
+  <button id="export" title="Download ~/.config/nvim, plugins, state and ~/work as a .tar for desktop Neovim">Export files as .tar</button>
+  <button id="run" hidden>Run again</button>
+  <span id="status">Starting…</span>
+</div>
+<div id="term"></div>
+<!--@runtime-->
+<!--@store-->
+<!--@xterm-->
+<!--@engine-->
+<!--@app-->
+<!--@shell-->
+</body>
+</html>
