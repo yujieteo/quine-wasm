@@ -1,4 +1,0 @@
-# Plugins that the build installs into ~/.local/share/nvim/site/pack/plugins/start.
-# Lua and Vimscript plugins only. One per line: name, GitHub repository, pinned commit.
-lualine.nvim   nvim-lualine/lualine.nvim  221ce6b2d999187044529f49da6554a92f740a96
-nvim-surround  kylechui/nvim-surround     8b47db616ef658b8fc27e61db2896aa2f40134de
