@@ -15,7 +15,7 @@ It needs no server, no network and no install.
 You can send it by email, put it on a USB drive, or open it from `file://` on a different machine.
 
 The page format and the Save function come from [quine-wasm](../../README.md).
-python-html links CPython with the quine-wasm CLI, as [nvim-html](../nvim-html/README.md) does for Neovim.
+python-html links CPython with the quine-wasm CLI.
 
 ## The 2 pages
 
